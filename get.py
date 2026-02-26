@@ -6,7 +6,7 @@ from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, 
 from reportlab.lib import colors
 from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 from reportlab.lib.units import cm
-from rules import apply_rules  # rules.py must have apply_rules function
+from rules import apply_rules
 
 MSC_FILE = "msc.json"
 DAYS = ["Mon","Tue","Wed","Thu","Fri","Sat"]
@@ -15,83 +15,134 @@ DOWNLOADS = os.path.join(os.path.expanduser("~"), "Downloads")
 
 
 def generate_timetable_pdfs():
-    # Load data
+
     if not os.path.exists(MSC_FILE):
         return "msc.json not found!"
+
     with open(MSC_FILE,"r") as f:
         msc_data = json.load(f)
 
-    # Build timetables
+    # -------- Collect Classes --------
     classes = set()
     for t_info in msc_data.values():
         classes.update(t_info.get("classes",{}).keys())
-    timetable = {}
-    teacher_avail = {}
+
+    timetable = {cls: [[None]*PERIODS_PER_DAY for _ in range(len(DAYS))] for cls in classes}
+    teacher_avail = {
+        teacher: [[True]*PERIODS_PER_DAY for _ in range(len(DAYS))]
+        for teacher in msc_data.keys()
+    }
+
+    # -------- Pre-Apply Fixed Rules --------
+    temp_tt = {cls: [[None]*PERIODS_PER_DAY for _ in range(len(DAYS))] for cls in classes}
+    temp_tt = apply_rules(temp_tt, msc_data)
+
     for cls in classes:
-        timetable[cls] = [[None]*PERIODS_PER_DAY for _ in range(len(DAYS))]
-    for teacher in msc_data.keys():
-        teacher_avail[teacher] = [[True]*PERIODS_PER_DAY for _ in range(len(DAYS))]
+        for d in range(len(DAYS)):
+            for p in range(PERIODS_PER_DAY):
+                if temp_tt[cls][d][p] is not None:
+                    timetable[cls][d][p] = temp_tt[cls][d][p]
+                    for teacher in teacher_avail:
+                        teacher_avail[teacher][d][p] = False
 
-    # Collect subjects per class
-    class_subjects = {cls: [] for cls in classes}
-    for teacher, info in sorted(msc_data.items()):
-        sub = info["subject"]
-        for cls, periods in sorted(info["classes"].items()):
-            class_subjects[cls].append((sub, teacher, periods))
+    # -------- Build Subject Pool --------
+    class_subjects = {}
 
-    # Assign subjects evenly
-    for cls, subs in class_subjects.items():
-        for sub, teacher, periods in subs:
-            placed = 0
-            day_idx, period_idx = 0, 0
-            while placed < periods:
-                if timetable[cls][day_idx][period_idx] is None and teacher_avail[teacher][day_idx][period_idx]:
-                    timetable[cls][day_idx][period_idx] = {"subject": sub, "teacher": teacher}
-                    teacher_avail[teacher][day_idx][period_idx] = False
-                    placed += 1
-                period_idx += 1
-                if period_idx >= PERIODS_PER_DAY:
-                    period_idx = 0
-                    day_idx += 1
-                    if day_idx >= len(DAYS):
-                        day_idx = 0
+    for cls in classes:
+        subject_pool = []
+        for teacher, info in msc_data.items():
+            subject = info["subject"]
+            if cls in info["classes"]:
+                count = info["classes"][cls]
+                subject_pool.append({
+                    "subject": subject,
+                    "teacher": teacher,
+                    "remaining": count
+                })
+        class_subjects[cls] = subject_pool
 
-    # Apply rules from rules.py
-    timetable = apply_rules(timetable, msc_data)
+    # -------- Day-wise Balanced Filling --------
+    for cls in classes:
 
-    # Export all classes in a single PDF
+        subjects = class_subjects[cls]
+
+        for day in range(len(DAYS)):
+
+            subject_index = 0
+
+            for period in range(PERIODS_PER_DAY):
+
+                # Skip fixed rule slots
+                if timetable[cls][day][period] is not None:
+                    continue
+
+                attempts = 0
+
+                while attempts < len(subjects):
+
+                    subj_data = subjects[subject_index % len(subjects)]
+                    subject = subj_data["subject"]
+                    teacher = subj_data["teacher"]
+
+                    if subj_data["remaining"] > 0 and teacher_avail[teacher][day][period]:
+
+                        # Prevent same subject same period consecutive day
+                        if day > 0:
+                            prev = timetable[cls][day-1][period]
+                            if prev and prev["subject"] == subject:
+                                subject_index += 1
+                                attempts += 1
+                                continue
+
+                        # Place subject
+                        timetable[cls][day][period] = {
+                            "subject": subject,
+                            "teacher": teacher
+                        }
+
+                        teacher_avail[teacher][day][period] = False
+                        subj_data["remaining"] -= 1
+                        subject_index += 1
+                        break
+
+                    subject_index += 1
+                    attempts += 1
+
+    # -------- Export PDF --------
     pdf_path = os.path.join(DOWNLOADS, "All_Classes_Timetable.pdf")
     styles = getSampleStyleSheet()
     doc = SimpleDocTemplate(pdf_path, pagesize=A4)
     content = []
 
-    # Paragraph style for cell: subject on top, teacher below
     cell_style = ParagraphStyle(
         "CellStyle",
         fontSize=8,
-        alignment=1,  # center horizontally
+        alignment=1,
         leading=10,
     )
 
-    col_widths = [1.5*cm] + [3*cm]*len(DAYS)  # first column narrower, day columns wider
+    # Days as ROWS, Periods as COLUMNS
+    col_widths = [2*cm] + [2.5*cm]*PERIODS_PER_DAY
 
     for cls, table_data in timetable.items():
+
         title = Paragraph(f"Class {cls} Timetable", styles["Title"])
         content.append(title)
         content.append(Spacer(1, 12))
 
-        # Table header
-        data = [["Period"] + DAYS]
+        # Header row
+        header = ["Day"] + [f"P{p+1}" for p in range(PERIODS_PER_DAY)]
+        data = [header]
 
-        for period in range(PERIODS_PER_DAY):
-            row = [str(period+1)]
-            for day in range(len(DAYS)):
-                cell = table_data[day][period]
+        for day_index, day_name in enumerate(DAYS):
+            row = [day_name]
+            for period in range(PERIODS_PER_DAY):
+                cell = table_data[day_index][period]
                 if cell:
-                    # Use Paragraph with subject on top, teacher below
-                    subj = cell["subject"]
-                    teach = cell["teacher"]
-                    p = Paragraph(f"<b>{subj}</b><br/>{teach}", cell_style)
+                    p = Paragraph(
+                        f"<b>{cell['subject']}</b><br/>{cell['teacher']}",
+                        cell_style
+                    )
                     row.append(p)
                 else:
                     row.append("")
@@ -103,10 +154,11 @@ def generate_timetable_pdfs():
             ("BACKGROUND",(0,0),(-1,0),colors.lightgrey),
             ("ALIGN",(0,0),(-1,-1),"CENTER"),
             ("VALIGN",(0,0),(-1,-1),"MIDDLE"),
-            ("FONTSIZE",(0,0),(-1,-1),8),
         ]))
+
         content.append(tbl)
         content.append(PageBreak())
 
     doc.build(content)
+
     return f"All class timetables exported to {pdf_path}"
