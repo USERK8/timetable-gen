@@ -18,10 +18,7 @@ from s import SettingsPage
 from mc import ManageClasses
 from mt import ManageTeachers
 
-# Import the function from get.py
 from get import generate_timetable_pdfs
-
-# ----------------- Update Feature -----------------
 from update import check_for_update
 
 class MainWindow(QWidget):
@@ -36,8 +33,8 @@ class MainWindow(QWidget):
 
         self.stack = QStackedWidget()
 
-        # Create pages in proper order
-        self.ManageClasses = ManageClasses(self)  # initialize first
+        # Create pages
+        self.ManageClasses = ManageClasses(self)
         self.settings_page = SettingsPage(self)
         self.manage_teachers_page = ManageTeachers(self)
         self.home_page = self.create_home_page()
@@ -54,6 +51,7 @@ class MainWindow(QWidget):
         self.setLayout(main_layout)
 
         self.apply_base_style()
+        self.dynamic_scaling_home()  # initial scaling
 
     def apply_base_style(self):
         self.setStyleSheet("""
@@ -144,8 +142,8 @@ class MainWindow(QWidget):
         return page
 
     def resizeEvent(self, event):
+        # Dynamic scaling on resize
         self.dynamic_scaling_home()
-        # Trigger dynamic scaling in subpages safely
         if hasattr(self, "ManageClasses") and hasattr(self.ManageClasses, "dynamic_scaling"):
             self.ManageClasses.dynamic_scaling()
         if hasattr(self, "manage_teachers_page") and hasattr(self.manage_teachers_page, "dynamic_scaling"):
@@ -159,9 +157,10 @@ class MainWindow(QWidget):
             return
 
         width = self.width()
+        height = self.height()
 
         # Title scaling
-        title_size = max(30, width // 25)
+        title_size = max(40, width // 20)
         self.title.setFont(QFont("Arial", title_size, QFont.Weight.Bold))
         self.title.setStyleSheet("""
             QLabel {
@@ -171,13 +170,13 @@ class MainWindow(QWidget):
                     stop:0 #ff4ecd,
                     stop:1 #a855f7
                 );
-                margin-bottom: 40px;
+                margin-bottom: 50px;
             }
         """)
 
         # Button scaling
-        button_font_size = max(14, width // 80)
-        padding = max(12, width // 100)
+        button_font_size = max(18, width // 60)
+        padding = max(15, width // 120)
 
         for btn in self.buttons:
             btn.setFont(QFont("Arial", button_font_size))
@@ -191,7 +190,7 @@ class MainWindow(QWidget):
                     );
                     color: white;
                     border: 2px solid #2f2f2f;
-                    border-radius: 15px;
+                    border-radius: 20px;
                     padding: {padding}px;
                 }}
 
