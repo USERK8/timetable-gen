@@ -36,6 +36,7 @@ def apply_rules(timetable, msc_data):
     3. CS practicals (3 blocks per class, all 11/12)
     4. Phy/Chem practicals (2 blocks per science class)
     5. Maths synchronization rule
+    6. Bio practicals (4 blocks per week for 11B and 12B)
     """
 
     # ---------------------------------------
@@ -55,13 +56,17 @@ def apply_rules(timetable, msc_data):
     # ---------------------------------------
     cs_lab = [[None for _ in range(PERIODS_PER_DAY)] for _ in DAYS]
     phychem_lab = [[None for _ in range(PERIODS_PER_DAY)] for _ in DAYS]
+    bio_lab = [[None for _ in range(PERIODS_PER_DAY)] for _ in DAYS]
 
     # ---------------------------------------
     # WEEKLY TRACKERS
     # ---------------------------------------
     cs_blocks = {cls: 0 for cls in actual_classes}
     phychem_blocks = {cls: 0 for cls in actual_classes}
+    bio_blocks = {"11B": 0, "12B": 0}
+
     practical_days = {cls: set() for cls in actual_classes}
+    bio_practical_days = {"11B": set(), "12B": set()}
 
     # ---------------------------------------
     # RULE 1 & 2: MPT and CCA (ALL CLASSES)
@@ -160,6 +165,53 @@ def apply_rules(timetable, msc_data):
 
             if not placed:
                 break
+
+    # ---------------------------------------
+    # BIO PRACTICALS (4 BLOCKS PER 11B/12B)
+    # ---------------------------------------
+    def can_place_bio(cls, day, period):
+        table = timetable[cls]
+
+        if period >= PERIODS_PER_DAY - 1:
+            return False
+
+        # Must be empty
+        if table[day][period] or table[day][period + 1]:
+            return False
+
+        # Only one practical block per day
+        if day in bio_practical_days[cls]:
+            return False
+
+        # Lab must be free
+        if bio_lab[day][period] or bio_lab[day][period + 1]:
+            return False
+
+        return True
+
+    def place_bio(cls, day, period):
+        timetable[cls][day][period] = {"subject": "Bio Practical", "teacher": "—"}
+        timetable[cls][day][period + 1] = {"subject": "Bio Practical", "teacher": "—"}
+
+        bio_lab[day][period] = cls
+        bio_lab[day][period + 1] = cls
+
+        bio_practical_days[cls].add(day)
+        bio_blocks[cls] += 1
+
+    for cls in ["11B", "12B"]:
+        while bio_blocks[cls] < 4:
+            placed = False
+            for day in range(len(DAYS)):
+                for period in range(PERIODS_PER_DAY - 1):
+                    if can_place_bio(cls, day, period):
+                        place_bio(cls, day, period)
+                        placed = True
+                        break
+                if placed:
+                    break
+            if not placed:
+                break  # prevent infinite loop
 
     # ---------------------------------------
     # MATHS SYNCHRONIZATION RULE

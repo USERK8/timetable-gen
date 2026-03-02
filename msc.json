@@ -2,25 +2,39 @@
     "SHERSHAD": {
         "subject": "ENGLISH",
         "classes": {
-            "11A": 8
+            "11A": 6,
+            "11B": 6,
+            "11C": 6,
+            "12A": 6,
+            "12B": 6,
+            "12C": 6
         }
     },
     "RAJANI": {
         "subject": "PHYSICS",
         "classes": {
-            "11A": 8
+            "8C": 6,
+            "11A": 5,
+            "12B": 5
         }
     },
     "SOJU": {
         "subject": "CS",
         "classes": {
-            "11A": 8
+            "11A": 5,
+            "11B": 5,
+            "11C": 5,
+            "12A": 5,
+            "12B": 5,
+            "12C": 5
         }
     },
     "SAJIMON": {
         "subject": "CHEMISTRY",
         "classes": {
-            "11A": 10
+            "7A": 6,
+            "11A": 5,
+            "12B": 5
         }
     },
     "MOLLY": {
@@ -38,7 +52,9 @@
     "JAYA": {
         "subject": "MATHS",
         "classes": {
-            "11A": 8
+            "8C": 7,
+            "11A": 9,
+            "12A": 9
         }
     },
     "MISHA MADHU": {
@@ -53,12 +69,12 @@
     "SUSAN JOSEPH": {
         "subject": "ENGLISH",
         "classes": {
-            "6C": 5,
             "7C": 6,
             "8C": 6,
             "8B": 6,
             "9C": 7,
-            "10A": 7
+            "10A": 7,
+            "6C": 5
         }
     },
     "NITESH": {
@@ -280,12 +296,6 @@
             "10B": 7
         }
     },
-    "POOJA S": {
-        "subject": "SCIENCE",
-        "classes": {
-            "6B": 7
-        }
-    },
     "AJITHA C": {
         "subject": "MALAYALAM",
         "classes": {
@@ -295,14 +305,6 @@
             "8A": 1,
             "8B": 1,
             "8C": 1
-        }
-    },
-    "SAJIMON K PAUL": {
-        "subject": "CHEMISTRY",
-        "classes": {
-            "7A": 6,
-            "11A": 5,
-            "12B": 5
         }
     },
     "LIJI MATHEW": {
@@ -331,27 +333,13 @@
             "12C": 9
         }
     },
-    "JAYA S": {
-        "subject": "MATHS",
-        "classes": {
-            "8C": 7,
-            "11A": 9,
-            "12A": 9
-        }
-    },
-    "RAJANI C": {
-        "subject": "PHYSICS",
-        "classes": {
-            "8C": 6,
-            "11A": 5,
-            "12B": 5
-        }
-    },
     "VISHNUPRIYA G S": {
         "subject": "ECONOMICS",
         "classes": {
             "8A": 6,
-            "8B": 6
+            "8B": 6,
+            "11C": 9,
+            "12C": 9
         }
     },
     "SREEDEVAN V K": {
@@ -365,26 +353,11 @@
             "10C": 2
         }
     },
-    "SHERSHAD SHAIK C N": {
-        "subject": "ENGLISH",
+    "AMBILY S": {
+        "subject": "COMMERCE",
         "classes": {
-            "11A": 5,
-            "11B": 5,
-            "11C": 5,
-            "12A": 5,
-            "12B": 5,
-            "12C": 5
-        }
-    },
-    "S SOJU": {
-        "subject": "CS",
-        "classes": {
-            "11A": 5,
-            "11B": 5,
-            "11C": 5,
-            "12A": 5,
-            "12B": 5,
-            "12C": 5
+            "11C": 18,
+            "12C": 18
         }
     }
 }

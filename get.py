@@ -1,6 +1,10 @@
 # get.py
 
-import json, os
+import json
+import os
+import random
+import copy
+
 from reportlab.lib.pagesizes import A4
 from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer, PageBreak
 from reportlab.lib import colors
@@ -10,9 +14,8 @@ from reportlab.lib.units import cm
 from rules import apply_rules, sort_classes
 
 MSC_FILE = "msc.json"
-DAYS = ["Mon","Tue","Wed","Thu","Fri","Sat"]
+DAYS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat"]
 PERIODS_PER_DAY = 8
-TOTAL_SLOTS = len(DAYS) * PERIODS_PER_DAY
 DOWNLOADS = os.path.join(os.path.expanduser("~"), "Downloads")
 
 
@@ -21,141 +24,155 @@ def generate_timetable_pdfs():
     if not os.path.exists(MSC_FILE):
         return "msc.json not found!"
 
-    with open(MSC_FILE,"r") as f:
+    with open(MSC_FILE, "r") as f:
         msc_data = json.load(f)
 
-    # -------- Collect Classes --------
+    # Collect all classes (6-12)
     classes = set()
     for t_info in msc_data.values():
-        classes.update(t_info.get("classes",{}).keys())
+        for cls in t_info.get("classes", {}).keys():
+            classes.add(cls)
 
     classes = sort_classes(list(classes))
 
-    # -------- Initialize Timetable --------
-    timetable = {cls: [[None]*PERIODS_PER_DAY for _ in range(len(DAYS))] for cls in classes}
-    teacher_avail = {
-        teacher: [[True]*PERIODS_PER_DAY for _ in range(len(DAYS))]
-        for teacher in msc_data.keys()
-    }
+    best_timetable = None
+    best_empty = 999999
 
-    # -------- Apply Fixed Rules --------
-    temp_tt = {cls: [[None]*PERIODS_PER_DAY for _ in range(len(DAYS))] for cls in classes}
-    temp_tt = apply_rules(temp_tt, msc_data)
+    # ---------------------------
+    # INITIAL HEAVY-FIRST ALLOCATION
+    # ---------------------------
+    for attempt in range(40):
+        timetable = {cls: [[None]*PERIODS_PER_DAY for _ in range(len(DAYS))] for cls in classes}
+        teacher_avail = {teacher: [[True]*PERIODS_PER_DAY for _ in range(len(DAYS))] for teacher in msc_data.keys()}
 
+        # Apply fixed rules from rules.py (MPT, CCA, Practicals)
+        timetable = apply_rules(timetable, msc_data)
+
+        # Build teacher tasks
+        tasks = []
+        teachers_sorted = sorted(
+            msc_data.items(),
+            key=lambda x: sum(v for c, v in x[1]["classes"].items()),
+            reverse=True
+        )
+
+        for teacher, info in teachers_sorted:
+            subject = info["subject"]
+            for cls, count in info["classes"].items():
+                for _ in range(count):
+                    tasks.append({"teacher": teacher, "class": cls, "subject": subject})
+
+        random.shuffle(tasks)
+
+        # Heavy-first allocation
+        for task in tasks:
+            cls = task["class"]
+            teacher = task["teacher"]
+            subject = task["subject"]
+
+            slots = [(d, p) for d in range(len(DAYS)) for p in range(PERIODS_PER_DAY)]
+            random.shuffle(slots)
+
+            for day, period in slots:
+                if timetable[cls][day][period] is None and teacher_avail[teacher][day][period]:
+                    timetable[cls][day][period] = {"subject": subject, "teacher": teacher}
+                    teacher_avail[teacher][day][period] = False
+                    break
+
+        # Count empty slots
+        empty_count = sum(
+            1
+            for cls in classes
+            for d in range(len(DAYS))
+            for p in range(PERIODS_PER_DAY)
+            if timetable[cls][d][p] is None
+        )
+
+        if empty_count < best_empty:
+            best_empty = empty_count
+            best_timetable = copy.deepcopy(timetable)
+
+        if best_empty == 0:
+            break
+
+    timetable = best_timetable
+
+    # ---------------------------
+    # REPAIR PASS: fill leftover empty slots
+    # ---------------------------
+
+    teacher_avail = {teacher: [[True]*PERIODS_PER_DAY for _ in range(len(DAYS))] for teacher in msc_data.keys()}
     for cls in classes:
         for d in range(len(DAYS)):
             for p in range(PERIODS_PER_DAY):
-                if temp_tt[cls][d][p] is not None:
-                    timetable[cls][d][p] = temp_tt[cls][d][p]
+                cell = timetable[cls][d][p]
+                if cell and cell["teacher"] != "—":
+                    teacher_avail[cell["teacher"]][d][p] = False
 
-    # -------- Build Subject Pool --------
+    # Build subjects pool per class
     class_subjects = {}
-
     for cls in classes:
         subject_pool = []
-
         for teacher, info in msc_data.items():
-            subject = info["subject"]
             if cls in info["classes"]:
-                count = info["classes"][cls]
-                subject_pool.append({
-                    "subject": subject,
-                    "teacher": teacher,
-                    "remaining": count
-                })
-
+                subject_pool.append({"subject": info["subject"], "teacher": teacher})
         class_subjects[cls] = subject_pool
 
-    # -------- Adaptive Smart Allocation --------
+    # Fill empty slots
     for cls in classes:
-
-        subjects = class_subjects[cls]
-
-        for day in range(len(DAYS)):
-            for period in range(PERIODS_PER_DAY):
-
-                if timetable[cls][day][period] is not None:
-                    continue
-
-                # Sort subjects by highest remaining demand
-                subjects_sorted = sorted(
-                    subjects,
-                    key=lambda x: x["remaining"],
-                    reverse=True
-                )
-
-                placed = False
-
-                for subj_data in subjects_sorted:
-
-                    if subj_data["remaining"] <= 0:
-                        continue
-
-                    teacher = subj_data["teacher"]
-
-                    if teacher_avail[teacher][day][period]:
-
-                        timetable[cls][day][period] = {
-                            "subject": subj_data["subject"],
-                            "teacher": teacher
-                        }
-
-                        teacher_avail[teacher][day][period] = False
-                        subj_data["remaining"] -= 1
-                        placed = True
-                        break
-
-                # If nothing fits, leave empty (soft constraint)
-                if not placed:
-                    pass
-
-    # -------- Warning Report --------
-    warnings = []
-
-    for cls in classes:
-        empty_slots = 0
-
         for d in range(len(DAYS)):
             for p in range(PERIODS_PER_DAY):
                 if timetable[cls][d][p] is None:
-                    empty_slots += 1
+                    possible_subjects = class_subjects[cls][:]
+                    random.shuffle(possible_subjects)
+                    placed = False
+                    for sub in possible_subjects:
+                        subject = sub["subject"]
+                        teacher = sub["teacher"]
 
-        if empty_slots > 0:
-            warnings.append(f"{cls}: {empty_slots} empty slots")
+                        if teacher == "—":
+                            continue
 
-        for subj in class_subjects[cls]:
-            if subj["remaining"] > 0:
-                warnings.append(
-                    f"{cls}: {subj['remaining']} periods of {subj['subject']} unallocated"
-                )
+                        # Max 2 same-sub per day for classes 6-10
+                        if cls[:2] in ("6", "7", "8", "9", "10"):
+                            count_today = sum(
+                                1 for pp in range(PERIODS_PER_DAY)
+                                if timetable[cls][d][pp] and timetable[cls][d][pp]["subject"] == subject
+                            )
+                            if count_today >= 2:
+                                continue
 
-    if warnings:
-        print("\n⚠ TIMETABLE WARNINGS:")
-        for w in warnings:
-            print(" -", w)
+                        if teacher_avail[teacher][d][p]:
+                            timetable[cls][d][p] = {"subject": subject, "teacher": teacher}
+                            teacher_avail[teacher][d][p] = False
+                            placed = True
+                            break
+                    if not placed:
+                        continue  # leave empty if no teacher available
 
-    # -------- Export PDF (CLASS-WISE ORDERED) --------
-    pdf_path = os.path.join(DOWNLOADS, "All_Classes_Timetable.pdf")
+    final_empty = sum(
+        1
+        for cls in classes
+        for d in range(len(DAYS))
+        for p in range(PERIODS_PER_DAY)
+        if timetable[cls][d][p] is None
+    )
+
+    # ---------------------------
+    # Generate PDF
+    # ---------------------------
+    pdf_path = os.path.join(DOWNLOADS, "All_Classes_6_to_12_Timetable.pdf")
     styles = getSampleStyleSheet()
     doc = SimpleDocTemplate(pdf_path, pagesize=A4)
     content = []
 
-    cell_style = ParagraphStyle(
-        "CellStyle",
-        fontSize=8,
-        alignment=1,
-        leading=10,
-    )
-
+    cell_style = ParagraphStyle("CellStyle", fontSize=8, alignment=1, leading=10)
     col_widths = [2*cm] + [2.5*cm]*PERIODS_PER_DAY
 
     for cls in classes:
-
-        table_data = timetable[cls]
-
         title = Paragraph(f"Class {cls} Timetable", styles["Title"])
         content.append(title)
-        content.append(Spacer(1, 12))
+        content.append(Spacer(1,12))
 
         header = ["Day"] + [f"P{p+1}" for p in range(PERIODS_PER_DAY)]
         data = [header]
@@ -163,12 +180,9 @@ def generate_timetable_pdfs():
         for day_index, day_name in enumerate(DAYS):
             row = [day_name]
             for period in range(PERIODS_PER_DAY):
-                cell = table_data[day_index][period]
+                cell = timetable[cls][day_index][period]
                 if cell:
-                    p = Paragraph(
-                        f"<b>{cell['subject']}</b><br/>{cell['teacher']}",
-                        cell_style
-                    )
+                    p = Paragraph(f"<b>{cell['subject']}</b><br/>{cell['teacher']}", cell_style)
                     row.append(p)
                 else:
                     row.append("")
@@ -179,12 +193,11 @@ def generate_timetable_pdfs():
             ("GRID",(0,0),(-1,-1),0.5,colors.black),
             ("BACKGROUND",(0,0),(-1,0),colors.lightgrey),
             ("ALIGN",(0,0),(-1,-1),"CENTER"),
-            ("VALIGN",(0,0),(-1,-1),"MIDDLE"),
+            ("VALIGN",(0,0),(-1,-1),"MIDDLE")
         ]))
-
         content.append(tbl)
         content.append(PageBreak())
 
     doc.build(content)
 
-    return f"Timetable generated with adaptive fitting.\nExported to {pdf_path}"
+    return f"Timetable generated using repair-pass allocation.\nEmpty slots: {final_empty}\nExported to {pdf_path}"
