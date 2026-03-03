@@ -46,15 +46,14 @@
     "PET": {
         "subject": "PT",
         "classes": {
-            "11A": 7
+            "11A": 1
         }
     },
     "JAYA": {
         "subject": "MATHS",
         "classes": {
-            "8C": 7,
-            "11A": 9,
-            "12A": 9
+            "8C": 7
+            
         }
     },
     "MISHA MADHU": {
@@ -210,7 +209,13 @@
             "9C": 3,
             "10A": 3,
             "10B": 3,
-            "10C": 3
+            "10C": 3,
+            "11A": 1,
+            "11B": 1,
+            "11C": 3,
+            "12A": 1,
+            "12B": 1,
+            "12C": 3
         }
     },
     "MOLLY TM": {
@@ -328,9 +333,7 @@
         "classes": {
             "8C": 6,
             "9A": 7,
-            "10C": 7,
-            "11C": 9,
-            "12C": 9
+            "10C": 7
         }
     },
     "VISHNUPRIYA G S": {
@@ -354,7 +357,7 @@
         }
     },
     "AMBILY S": {
-        "subject": "COMMERCE",
+        "subject": "COMMERCE/BUSINESS STD.",
         "classes": {
             "11C": 18,
             "12C": 18

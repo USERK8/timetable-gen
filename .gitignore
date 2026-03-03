@@ -23,3 +23,16 @@ Thumbs.db
 
 # Ignore secrets / local config
 *.env
+
+# PyInstaller build artifacts
+build/
+dist/
+*.spec
+*.manifest
+*.exe  # if you ever build Windows exe locally
+*.app  # if macOS bundles are generated
+*.dll  # shared libraries
+*.so   # Linux shared objects generated
+*.dylib
+*.log
+*.egg-info/
