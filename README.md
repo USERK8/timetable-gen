@@ -148,7 +148,7 @@ _**⚠ Trial Version Notice**_
 
 _**📩 Support**_
 
-**Email: polisohankumarreddy@gmail.com**
+**Email: userk8.dev@gmail.com**
 
 _**Thanks for trying the app!
 Your feedback helps shape the future of smarter school management.**_
