@@ -3,7 +3,8 @@
 import threading
 from PyQt6.QtWidgets import (
     QWidget, QVBoxLayout, QPushButton, QLabel,
-    QFrame, QMessageBox, QProgressBar
+    QFrame, QMessageBox, QProgressBar, QDialog,
+    QSpinBox, QHBoxLayout
 )
 from PyQt6.QtCore import Qt, QMetaObject, Q_ARG, pyqtSlot
 from PyQt6.QtGui import QFont
@@ -12,7 +13,144 @@ from get import generate_timetable_async
 from tw import generate_teacherwise_pdf
 
 def generate_daywise_pdf():
-    return "Day-wise PDF generator is still under development."
+    return "Day-wise Excel generator is still under development."
+
+
+# ----------------------------------------------------------------
+# ATTEMPTS DIALOG
+# ----------------------------------------------------------------
+
+class AttemptsDialog(QDialog):
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setWindowTitle("Generation Settings")
+        self.setMinimumWidth(480)
+        self.setWindowFlag(Qt.WindowType.WindowContextHelpButtonHint, False)
+
+        self.chosen_attempts = None
+
+        root = QVBoxLayout()
+        root.setSpacing(28)
+        root.setContentsMargins(48, 44, 48, 40)
+
+        # Title
+        title = QLabel("Class-wise Timetable")
+        title.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        title.setFont(QFont("Arial", 18, QFont.Weight.Bold))
+        title.setStyleSheet("color: #ff4ecd;")
+        root.addWidget(title)
+
+        # Description
+        desc = QLabel(
+            "How many generation attempts should the engine run?\n\n"
+            "Each attempt tries a fresh random schedule and keeps\n"
+            "the best result found so far."
+        )
+        desc.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        desc.setFont(QFont("Arial", 12))
+        desc.setStyleSheet("color: #c0c0c0; line-height: 1.6;")
+        desc.setWordWrap(True)
+        root.addWidget(desc)
+
+        # Spin box row
+        spin_row = QHBoxLayout()
+        spin_row.setSpacing(16)
+
+        spin_label = QLabel("Attempts:")
+        spin_label.setFont(QFont("Arial", 13))
+        spin_label.setStyleSheet("color: #e0e0e0;")
+        spin_row.addWidget(spin_label)
+
+        self.spinbox = QSpinBox()
+        self.spinbox.setRange(1, 9999)
+        self.spinbox.setValue(100)
+        self.spinbox.setSingleStep(10)
+        self.spinbox.setFont(QFont("Arial", 14))
+        self.spinbox.setFixedHeight(44)
+        self.spinbox.setStyleSheet("""
+            QSpinBox {
+                background-color: #1e1e1e;
+                color: white;
+                border: 2px solid #3a3a3a;
+                border-radius: 10px;
+                padding: 4px 12px;
+            }
+            QSpinBox:focus {
+                border: 2px solid #a855f7;
+            }
+            QSpinBox::up-button, QSpinBox::down-button {
+                width: 28px;
+                background-color: #2a2a2a;
+                border: none;
+            }
+            QSpinBox::up-button:hover, QSpinBox::down-button:hover {
+                background-color: #3a3a3a;
+            }
+        """)
+        spin_row.addWidget(self.spinbox)
+        root.addLayout(spin_row)
+
+        # Hint
+        hint = QLabel("Suggested: 100  ·  Higher = better results, longer wait")
+        hint.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        hint.setFont(QFont("Arial", 10))
+        hint.setStyleSheet("color: #666666;")
+        root.addWidget(hint)
+
+        # Buttons
+        btn_row = QHBoxLayout()
+        btn_row.setSpacing(16)
+
+        self.btn_cancel = QPushButton("Cancel")
+        self.btn_cancel.setFixedHeight(46)
+        self.btn_cancel.setFont(QFont("Arial", 12))
+        self.btn_cancel.clicked.connect(self.reject)
+        self.btn_cancel.setStyleSheet("""
+            QPushButton {
+                background-color: #2a2a2a;
+                color: #aaaaaa;
+                border: 2px solid #3a3a3a;
+                border-radius: 12px;
+            }
+            QPushButton:hover {
+                background-color: #333333;
+                color: white;
+            }
+        """)
+
+        self.btn_generate = QPushButton("Generate")
+        self.btn_generate.setFixedHeight(46)
+        self.btn_generate.setFont(QFont("Arial", 12, QFont.Weight.Bold))
+        self.btn_generate.clicked.connect(self._confirm)
+        self.btn_generate.setDefault(True)
+        self.btn_generate.setStyleSheet("""
+            QPushButton {
+                background-color: qlineargradient(
+                    x1:0, y1:0, x2:1, y2:1,
+                    stop:0 #0f3d2e, stop:1 #1b2a4a
+                );
+                color: white;
+                border: 2px solid #2f2f2f;
+                border-radius: 12px;
+            }
+            QPushButton:hover {
+                background-color: qlineargradient(
+                    x1:0, y1:0, x2:1, y2:1,
+                    stop:0 #145c43, stop:1 #243b6b
+                );
+            }
+        """)
+
+        btn_row.addWidget(self.btn_cancel)
+        btn_row.addWidget(self.btn_generate)
+        root.addLayout(btn_row)
+
+        self.setLayout(root)
+        self.setStyleSheet("QDialog { background-color: #141414; }")
+
+    def _confirm(self):
+        self.chosen_attempts = self.spinbox.value()
+        self.accept()
 
 
 class PDFExporterPage(QWidget):
@@ -27,7 +165,7 @@ class PDFExporterPage(QWidget):
         self.main_layout.setContentsMargins(60, 40, 60, 40)
 
         # Title
-        self.title = QLabel("PDF Exporter")
+        self.title = QLabel("Excel Exporter")
         self.title.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.main_layout.addWidget(self.title)
 
@@ -67,9 +205,9 @@ class PDFExporterPage(QWidget):
 
         self.buttons = []
 
-        self.btn_classwise   = QPushButton("Generate Class-wise PDF")
-        self.btn_teacherwise = QPushButton("Generate Teacher-wise PDF")
-        self.btn_daywise     = QPushButton("Generate Day-wise PDF")
+        self.btn_classwise   = QPushButton("Generate Class-wise Excel")
+        self.btn_teacherwise = QPushButton("Generate Teacher-wise Excel")
+        self.btn_daywise     = QPushButton("Generate Day-wise Excel")
         self.btn_back        = QPushButton("Back to Home")
 
         self.btn_classwise.clicked.connect(self.run_classwise_pdf)
@@ -222,8 +360,17 @@ class PDFExporterPage(QWidget):
         if self._generating:
             return
 
-        from get import MAX_ATTEMPTS
-        self._set_busy("Generating class-wise timetable… please wait.", total=MAX_ATTEMPTS)
+        # Show the attempts dialog first
+        dialog = AttemptsDialog(self)
+        if dialog.exec() != QDialog.DialogCode.Accepted:
+            return
+
+        max_attempts = dialog.chosen_attempts
+
+        self._set_busy(
+            f"Generating class-wise timetable… please wait.",
+            total=max_attempts
+        )
 
         def on_progress(attempt, total, best_empty):
             QMetaObject.invokeMethod(
@@ -245,13 +392,14 @@ class PDFExporterPage(QWidget):
             QMetaObject.invokeMethod(
                 self, "_on_generation_error",
                 Qt.ConnectionType.QueuedConnection,
-                Q_ARG(str, f"Error generating class-wise PDF:\n{err}")
+                Q_ARG(str, f"Error generating class-wise Excel:\n{err}")
             )
 
         generate_timetable_async(
             on_progress=on_progress,
             on_done=on_done,
-            on_error=on_error
+            on_error=on_error,
+            max_attempts=max_attempts
         )
 
     def run_teacherwise_pdf(self):

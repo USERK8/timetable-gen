@@ -126,7 +126,7 @@ class MainWindow(QWidget):
 
         btn_manage_classes   = QPushButton("Manage Classes")
         btn_manage_teachers  = QPushButton("Manage Teachers")
-        btn_generate         = QPushButton("Select the PDF Exporter Type")
+        btn_generate         = QPushButton("Select the Excel Exporter Type")
         btn_settings         = QPushButton("Settings")
 
         btn_manage_classes.clicked.connect(

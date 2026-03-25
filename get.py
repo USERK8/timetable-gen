@@ -1,9 +1,8 @@
-import json, os, random, copy, threading, multiprocessing
-from reportlab.lib.pagesizes import A4
-from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer, PageBreak
-from reportlab.lib import colors
-from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
-from reportlab.lib.units import cm
+import json, os, random, copy, threading, multiprocessing, re
+from openpyxl import Workbook
+from openpyxl.styles import (Font, PatternFill, Alignment,
+                              Border, Side, GradientFill)
+from openpyxl.utils import get_column_letter
 from rules import apply_rules, sort_classes
 from paths import MSC_FILE, BACKEND_FILE
 DAYS            = ["Mon","Tue","Wed","Thu","Fri","Sat"]
@@ -636,13 +635,13 @@ def build_empty_report(timetable, classes):
 # -------------------------------------------------------
 
 def _run_attempts(msc_data, backend_data_existing, classes,
-                  teacher_class_map, progress_queue):
+                  teacher_class_map, progress_queue, max_attempts):
     try:
         best_timetable = None
         best_empty     = 999999
         best_backend   = None
 
-        for attempt in range(MAX_ATTEMPTS):
+        for attempt in range(max_attempts):
 
             timetable = {cls: [[None]*PERIODS_PER_DAY for _ in DAYS] for cls in classes}
 
@@ -781,7 +780,7 @@ def _run_attempts(msc_data, backend_data_existing, classes,
 
             progress_queue.put({
                 "attempt": attempt + 1,
-                "total":   MAX_ATTEMPTS,
+                "total":   max_attempts,
                 "empty":   best_empty,
             })
 
@@ -800,21 +799,76 @@ def _run_attempts(msc_data, backend_data_existing, classes,
 
 
 # -------------------------------------------------------
-# PDF BUILDER
+# EXCEL STYLES HELPER
 # -------------------------------------------------------
 
-def _build_pdf(timetable, backend_grid, best_empty, msc_data, classes):
+def _make_border():
+    s = Side(style="thin", color="AAAAAA")
+    return Border(left=s, right=s, top=s, bottom=s)
+
+def _header_fill():
+    return PatternFill("solid", fgColor="2E4057")   # dark navy
+
+def _alt_row_fill(i):
+    return PatternFill("solid", fgColor="F0F4F8" if i % 2 == 0 else "FFFFFF")
+
+def _practical_fill():
+    return PatternFill("solid", fgColor="FFF3CD")   # soft amber
+
+def _maths_fill():
+    return PatternFill("solid", fgColor="D4EDDA")   # soft green
+
+def _cell_fill():
+    return PatternFill("solid", fgColor="E8F4FD")   # soft blue
+
+def _style_header_row(ws, row_num, num_cols):
+    hdr_font  = Font(bold=True, color="FFFFFF", size=11)
+    hdr_align = Alignment(horizontal="center", vertical="center", wrap_text=True)
+    border    = _make_border()
+    for col in range(1, num_cols + 1):
+        cell = ws.cell(row=row_num, column=col)
+        cell.font      = hdr_font
+        cell.fill      = _header_fill()
+        cell.alignment = hdr_align
+        cell.border    = border
+
+def _style_data_cell(ws, row_num, col_num, subject="", row_i=0):
+    cell   = ws.cell(row=row_num, column=col_num)
+    border = _make_border()
+    cell.border    = border
+    cell.alignment = Alignment(horizontal="center", vertical="center", wrap_text=True)
+
+    subj_upper = subject.upper()
+    if "PRACTICAL" in subj_upper:
+        cell.fill = _practical_fill()
+        cell.font = Font(size=9, color="856404")
+    elif subj_upper in {"MATHS", "MATHS/CS/HINDI"}:
+        cell.fill = _maths_fill()
+        cell.font = Font(size=9, color="155724")
+    elif subj_upper in {"MPT", "CCA"}:
+        cell.fill = PatternFill("solid", fgColor="F8D7DA")
+        cell.font = Font(size=9, color="721C24")
+    elif subject:
+        cell.fill = _cell_fill()
+        cell.font = Font(size=9, color="1A4A6B")
+    else:
+        cell.fill = _alt_row_fill(row_i)
+        cell.font = Font(size=9, color="888888")
+
+
+# -------------------------------------------------------
+# EXCEL BUILDER
+# -------------------------------------------------------
+
+def _build_excel(timetable, backend_grid, best_empty, msc_data, classes):
+
+    # ── 1. Build backend teacher map ────────────────────────────────────────────
     backend_out = {}
 
-    # Maps special subjects to their teacher list (teachers not named in the cell)
     def maths_lead_teachers(cls):
-        # Only credit MATHS_LEAD_TEACHER (JAYA) — she's the lead for both groups
-        # but each group's slot is at a different time (guaranteed by place_maths_blocks)
         return [MATHS_LEAD_TEACHER]
 
     def maths_paired_teachers(cls):
-        # KIRAN and SOJU handle the paired (Hindi/CS) side for both groups
-        # Again different times, so no actual conflict
         return [t for t in MATHS_BUSY_TEACHERS if t != MATHS_LEAD_TEACHER]
 
     practical_teachers = {
@@ -825,10 +879,8 @@ def _build_pdf(timetable, backend_grid, best_empty, msc_data, classes):
         "MATHS/CS/HINDI":     maths_paired_teachers,
     }
 
-    # Maths block subjects — for these we show grade only ("11", "12"), not section
     MATHS_BLOCK_SUBJECTS = {"MATHS", "MATHS/CS/HINDI"}
 
-    # teacher -> day -> period -> display string
     teacher_slot_map = {
         t: [[None]*PERIODS_PER_DAY for _ in DAYS]
         for t in msc_data.keys()
@@ -836,7 +888,6 @@ def _build_pdf(timetable, backend_grid, best_empty, msc_data, classes):
     }
 
     def write_slot(teacher, day, period, display):
-        """Write display string to teacher's slot, no duplicates."""
         if teacher not in teacher_slot_map:
             return
         existing = teacher_slot_map[teacher][day][period]
@@ -846,11 +897,8 @@ def _build_pdf(timetable, backend_grid, best_empty, msc_data, classes):
             teacher_slot_map[teacher][day][period] = existing + ", " + display
 
     for cls in timetable:
-        # Grade-only label for maths block: "11A"->"11", "12B"->"12", "8C"->"8C"
-        import re
         m = re.match(r'^(\d+)[A-Za-z]$', cls)
         grade_label = m.group(1) if m else cls
-
         for day in range(len(DAYS)):
             for period in range(PERIODS_PER_DAY):
                 cell = timetable[cls][day][period]
@@ -858,16 +906,12 @@ def _build_pdf(timetable, backend_grid, best_empty, msc_data, classes):
                     continue
                 subject      = cell.get("subject", "").upper()
                 cell_teacher = cell.get("teacher", "")
-
                 if subject in practical_teachers:
-                    # Special subject — look up teachers from the map
                     owners  = practical_teachers[subject](cls)
-                    # Maths block: show grade only so 11A/11B/11C all write "11"
                     display = grade_label if subject in MATHS_BLOCK_SUBJECTS else cls
                     for t in owners:
                         write_slot(t, day, period, display)
                 else:
-                    # Regular cell — teacher name(s) are in the cell
                     owners = [t.strip() for t in cell_teacher.replace(",", "&").split("&") if t.strip()]
                     for t in owners:
                         write_slot(t, day, period, cls)
@@ -875,7 +919,6 @@ def _build_pdf(timetable, backend_grid, best_empty, msc_data, classes):
     for teacher, info in msc_data.items():
         if not teacher or teacher.strip() in {"—", "-", ""}:
             continue
-
         backend_out[teacher] = {
             "subject": sanitize(info.get("subject", "")),
             "grid":    teacher_slot_map.get(teacher, [[None]*PERIODS_PER_DAY for _ in DAYS])
@@ -884,49 +927,79 @@ def _build_pdf(timetable, backend_grid, best_empty, msc_data, classes):
     with open(BACKEND_FILE, "w") as f:
         json.dump(backend_out, f, indent=4)
 
-    pdf_path   = os.path.join(DOWNLOADS, "timetable.pdf")
-    styles     = getSampleStyleSheet()
-    cell_style = ParagraphStyle("Cell", fontSize=8, alignment=1, leading=10)
-    doc        = SimpleDocTemplate(pdf_path, pagesize=A4)
-    content    = []
-    col_widths  = [2*cm] + [2.5*cm]*PERIODS_PER_DAY
+    # ── 2. Build Excel workbook ─────────────────────────────────────────────────
+    DOWNLOADS   = os.path.join(os.path.expanduser("~"), "Downloads")
+    xlsx_path   = os.path.join(DOWNLOADS, "timetable.xlsx")
+    wb = Workbook()
+    first_sheet = wb.active   # keep the default sheet, rename it later or replace it
 
+    period_labels = [f"Period {i+1}" for i in range(PERIODS_PER_DAY)]
+    num_cols      = 1 + PERIODS_PER_DAY   # Day col + period cols
+
+    first_sheet_removed = False
     for cls in classes:
-        content.append(Paragraph(sanitize(f"Class {cls} Timetable"), styles["Title"]))
-        content.append(Spacer(1, 12))
+        ws = wb.create_sheet(title=sanitize(cls))
+        if not first_sheet_removed:
+            wb.remove(first_sheet)
+            first_sheet_removed = True
 
-        data = [["Day"] + [f"P{i+1}" for i in range(PERIODS_PER_DAY)]]
+        # Column widths
+        ws.column_dimensions["A"].width = 10
+        for col in range(2, num_cols + 1):
+            ws.column_dimensions[get_column_letter(col)].width = 18
 
+        # Title row
+        ws.merge_cells(start_row=1, start_column=1,
+                       end_row=1,   end_column=num_cols)
+        title_cell            = ws.cell(row=1, column=1)
+        title_cell.value      = f"Class {cls} — Timetable"
+        title_cell.font       = Font(bold=True, size=13, color="FFFFFF")
+        title_cell.fill       = PatternFill("solid", fgColor="1A3A5C")
+        title_cell.alignment  = Alignment(horizontal="center", vertical="center")
+        ws.row_dimensions[1].height = 26
+
+        # Header row (Period labels)
+        ws.cell(row=2, column=1).value = "Day"
+        for i, lbl in enumerate(period_labels):
+            ws.cell(row=2, column=i + 2).value = lbl
+        _style_header_row(ws, 2, num_cols)
+        ws.row_dimensions[2].height = 22
+
+        # Data rows
         for d, day in enumerate(DAYS):
-            row = [day]
+            row_num = d + 3
+            ws.cell(row=row_num, column=1).value = day
+            ws.cell(row=row_num, column=1).font  = Font(bold=True, size=10)
+            ws.cell(row=row_num, column=1).fill  = PatternFill("solid", fgColor="DCE8F5")
+            ws.cell(row=row_num, column=1).alignment = Alignment(horizontal="center",
+                                                                  vertical="center")
+            ws.cell(row=row_num, column=1).border = _make_border()
+            ws.row_dimensions[row_num].height = 42
+
             for p in range(PERIODS_PER_DAY):
-                cell = timetable[cls][d][p]
-                if cell:
-                    txt = (f"<b>{sanitize(cell['subject'])}</b>"
-                           f"<br/>{sanitize(cell['teacher'])}")
-                    row.append(Paragraph(txt, cell_style))
+                col_num = p + 2
+                c       = timetable[cls][d][p]
+                if c:
+                    subject = sanitize(c.get("subject", ""))
+                    teacher = sanitize(c.get("teacher", ""))
+                    ws.cell(row=row_num, column=col_num).value = f"{subject}\n{teacher}"
                 else:
-                    row.append("")
-            data.append(row)
+                    subject = ""
+                    ws.cell(row=row_num, column=col_num).value = ""
+                _style_data_cell(ws, row_num, col_num, subject, d)
 
-        tbl = Table(data, colWidths=col_widths, repeatRows=1)
-        tbl.setStyle(TableStyle([
-            ("GRID",       (0, 0), (-1, -1), 0.5, colors.black),
-            ("BACKGROUND", (0, 0), (-1,  0), colors.lightgrey),
-            ("ALIGN",      (0, 0), (-1, -1), "CENTER"),
-            ("VALIGN",     (0, 0), (-1, -1), "MIDDLE"),
-        ]))
-        content.append(tbl)
-        content.append(PageBreak())
+        # Freeze header rows
+        ws.freeze_panes = "B3"
 
-    doc.build(content)
+    wb.save(xlsx_path)
 
     empty_report = build_empty_report(timetable, classes)
 
     summary = (
-        f"Timetable generated\n"
+        f"Timetable generated successfully!\n"
         f"Empty slots : {best_empty}\n"
-        f"PDF         : {pdf_path}\n"
+        f"Saved to    : {xlsx_path}\n"
+        f"({len(classes)} class sheets)\n"
         f"backend_details.json updated"
     )
 
@@ -941,16 +1014,17 @@ def _build_pdf(timetable, backend_grid, best_empty, msc_data, classes):
 # -------------------------------------------------------
 
 def _worker_process(msc_data, backend_data_existing, classes,
-                    teacher_class_map, progress_queue):
+                    teacher_class_map, progress_queue, max_attempts):
     _run_attempts(msc_data, backend_data_existing, classes,
-                  teacher_class_map, progress_queue)
+                  teacher_class_map, progress_queue, max_attempts)
 
 
 # -------------------------------------------------------
 # ASYNC ENTRY POINT
 # -------------------------------------------------------
 
-def generate_timetable_async(on_progress=None, on_done=None, on_error=None):
+def generate_timetable_async(on_progress=None, on_done=None, on_error=None,
+                             max_attempts=MAX_ATTEMPTS):
 
     def _watcher():
         try:
@@ -981,7 +1055,7 @@ def generate_timetable_async(on_progress=None, on_done=None, on_error=None):
             proc = multiprocessing.Process(
                 target=_worker_process,
                 args=(msc_data, backend_data_existing, classes,
-                      teacher_class_map, progress_queue),
+                      teacher_class_map, progress_queue, max_attempts),
                 daemon=True
             )
             proc.start()
@@ -997,7 +1071,7 @@ def generate_timetable_async(on_progress=None, on_done=None, on_error=None):
 
                 if "done" in msg:
                     proc.join()
-                    result = _build_pdf(
+                    result = _build_excel(
                         msg["timetable"], msg["backend"],
                         msg["empty"], msc_data, classes
                     )
