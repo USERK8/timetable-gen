@@ -6,7 +6,7 @@ from PyQt6.QtWidgets import QMessageBox
 from paths import APP_DIR, VERSION_FILE
 
 # GitHub repo raw URLs
-GITHUB_RAW_BASE = "https://raw.githubusercontent.com/USERK8/stt/main/"
+GITHUB_RAW_BASE = "https://raw.githubusercontent.com/USERK8/timetable-gen/main/"
 
 # Only code files — user-dat/ JSON files are NEVER touched by updates
 FILES_TO_UPDATE = [
