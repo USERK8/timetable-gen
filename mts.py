@@ -6,8 +6,7 @@ from PyQt6.QtWidgets import (
 )
 from PyQt6.QtCore import Qt
 
-MSC_FILE = "msc.json"
-CLASSES_FILE = "classes.json"
+from paths import MSC_FILE, CLASSES_FILE
 
 
 def load_classes():

@@ -4,6 +4,9 @@ import sys
 import threading
 import multiprocessing
 
+from paths import ensure_user_data
+ensure_user_data()   # creates user-dat/ and empty JSON files on first run
+
 from PyQt6.QtWidgets import (
     QApplication,
     QWidget,

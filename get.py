@@ -5,12 +5,11 @@ from reportlab.lib import colors
 from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 from reportlab.lib.units import cm
 from rules import apply_rules, sort_classes
-
-MSC_FILE        = "msc.json"
+from paths import MSC_FILE, BACKEND_FILE
 DAYS            = ["Mon","Tue","Wed","Thu","Fri","Sat"]
 PERIODS_PER_DAY = 8
 DOWNLOADS       = os.path.join(os.path.expanduser("~"), "Downloads")
-BACKEND_FILE    = os.path.join(os.path.dirname(__file__), "backend_details.json")
+
 
 BLOCKED_FILL = {"PET","LIBRARY","ART","DL","VE",
                 "MPT","CCA","CS PRACTICAL","PHY/CHEM PRACTICAL",

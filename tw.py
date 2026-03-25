@@ -6,11 +6,11 @@ from reportlab.lib.pagesizes import A4
 from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 from reportlab.lib import colors
 from reportlab.lib.units import cm
+from paths import BACKEND_FILE
 
 DAYS            = ["Mon","Tue","Wed","Thu","Fri","Sat"]
 PERIODS_PER_DAY = 8
 DOWNLOADS       = os.path.join(os.path.expanduser("~"), "Downloads")
-BACKEND_FILE    = os.path.join(os.path.dirname(__file__), "backend_details.json")
 
 # -------------------------------------------------------
 # These teachers handle practical/special blocks but their

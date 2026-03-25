@@ -7,9 +7,7 @@ from PyQt6.QtWidgets import (
 from PyQt6.QtCore import Qt
 from PyQt6.QtGui import QFont
 
-TEACH_FILE = "teach_dat.json"
-CLASS_FILE = "classes.json"
-MSC_FILE = "msc.json"
+from paths import TEACH_FILE, CLASSES_FILE, MSC_FILE
 
 
 # ------------------- Load / Save -------------------
