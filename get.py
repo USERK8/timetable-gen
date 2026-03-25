@@ -1036,6 +1036,34 @@ def generate_timetable_async(on_progress=None, on_done=None, on_error=None,
             with open(MSC_FILE) as f:
                 msc_data = json.load(f)
 
+            # ── Overbook check ────────────────────────────────────────────
+            # Total slots in a week = DAYS × PERIODS_PER_DAY = 6 × 8 = 48.
+            # If any teacher is assigned more than 48 periods total across
+            # all classes, it is physically impossible to schedule them.
+            WEEK_MAX = len(DAYS) * PERIODS_PER_DAY
+            overbooked = []
+            for teacher, info in msc_data.items():
+                total = sum(info.get("classes", {}).values())
+                if total > WEEK_MAX:
+                    overbooked.append((teacher, total))
+
+            if overbooked:
+                lines = "\n".join(
+                    f"  • {t}  —  {n} periods assigned  (max {WEEK_MAX})"
+                    for t, n in overbooked
+                )
+                if on_error:
+                    on_error(
+                        f"Overbooked teacher schedule detected!\n\n"
+                        f"The following teacher(s) have more periods assigned\n"
+                        f"than there are slots in a week ({WEEK_MAX} total):\n\n"
+                        f"{lines}\n\n"
+                        f"Please go to Manage Teachers → Manage Teacher's Schedule\n"
+                        f"and reduce their period counts before generating."
+                    )
+                return
+            # ─────────────────────────────────────────────────────────────
+
             if os.path.exists(BACKEND_FILE):
                 with open(BACKEND_FILE) as f:
                     backend_data_existing = json.load(f)

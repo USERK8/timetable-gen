@@ -140,17 +140,20 @@ class ManageTeachers(QWidget):
         self.edit_btn = QPushButton("Edit")
         self.delete_btn = QPushButton("Delete")
         self.schedule_btn = QPushButton("Manage Teacher's Schedule")
+        self.engagement_btn = QPushButton("See Teacher Engagement")
 
         self.add_btn.clicked.connect(self.add_teacher)
         self.edit_btn.clicked.connect(self.edit_teacher)
         self.delete_btn.clicked.connect(self.delete_teacher)
         self.schedule_btn.clicked.connect(self.manage_schedule)
+        self.engagement_btn.clicked.connect(self.show_engagement)
 
         btn_layout.addWidget(self.add_btn)
         btn_layout.addWidget(self.edit_btn)
         btn_layout.addWidget(self.delete_btn)
         self.layout.addLayout(btn_layout)
         self.layout.addWidget(self.schedule_btn)
+        self.layout.addWidget(self.engagement_btn)
 
         self.list_widget = QListWidget()
         self.layout.addWidget(self.list_widget)
@@ -215,6 +218,11 @@ class ManageTeachers(QWidget):
         self._schedule_window.show()
         self._schedule_window.raise_()
 
+    def show_engagement(self):
+        from mts import EngagementDialog
+        dlg = EngagementDialog(self)
+        dlg.exec()
+
     def dynamic_scaling(self):
         width = self.parent_window.width() if self.parent_window else self.width()
 
@@ -223,6 +231,7 @@ class ManageTeachers(QWidget):
         self.back_btn.setFont(QFont("Arial", max(12, width // 60)))
         self.name_input.setFont(QFont("Arial", max(12, width // 60)))
         self.subject_input.setFont(QFont("Arial", max(12, width // 60)))
-        for btn in [self.add_btn, self.edit_btn, self.delete_btn, self.schedule_btn]:
+        for btn in [self.add_btn, self.edit_btn, self.delete_btn,
+                    self.schedule_btn, self.engagement_btn]:
             btn.setFont(QFont("Arial", max(12, width // 60)))
         self.list_widget.setFont(QFont("Arial", max(12, width // 60)))
