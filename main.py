@@ -5,21 +5,17 @@ import threading
 import multiprocessing
 
 from paths import ensure_user_data
-ensure_user_data()   # creates user-dat/ and empty JSON files on first run
+ensure_user_data()
 
 from PyQt6.QtWidgets import (
-    QApplication,
-    QWidget,
-    QVBoxLayout,
-    QPushButton,
-    QLabel,
-    QFrame,
-    QStackedWidget,
-    QMessageBox,
+    QApplication, QWidget, QVBoxLayout, QHBoxLayout,
+    QPushButton, QLabel, QFrame, QStackedWidget, QSpacerItem,
+    QSizePolicy,
 )
-from PyQt6.QtCore import Qt, QMetaObject, Q_ARG, pyqtSlot
-from PyQt6.QtGui import QFont
+from PyQt6.QtCore import Qt
+from PyQt6.QtGui import QFont, QColor
 
+import theme
 from s import SettingsPage
 from mc import ManageClasses
 from mt import ManageTeachers
@@ -27,214 +23,281 @@ from pet import PDFExporterPage
 from update import check_for_update
 
 
+# ── Nav button config: (label, icon_char, slot_attr) ─────────────────────────
+NAV_ITEMS = [
+    ("Manage Classes",       "◈", "ManageClasses"),
+    ("Manage Teachers",      "✦", "manage_teachers_page"),
+    ("Generate / Export",    "⬡", "pdf_exporter_page"),
+    ("Settings",             "⚙", "settings_page"),
+]
+
+
+class NavButton(QPushButton):
+    """Left-sidebar navigation tile."""
+
+    NORMAL = f"""
+        QPushButton {{
+            background-color: transparent;
+            color: {theme.TEXT_SEC};
+            border: none;
+            border-radius: 12px;
+            padding: 14px 20px;
+            text-align: left;
+            font-size: 15px;
+            font-weight: 500;
+        }}
+        QPushButton:hover {{
+            background-color: {theme.SURFACE2};
+            color: {theme.TEXT_PRI};
+        }}
+    """
+
+    ACTIVE = f"""
+        QPushButton {{
+            background-color: {theme.ACCENT_DIM};
+            color: #ffffff;
+            border: none;
+            border-left: 3px solid {theme.ACCENT1};
+            border-radius: 12px;
+            padding: 14px 20px;
+            text-align: left;
+            font-size: 15px;
+            font-weight: 600;
+        }}
+    """
+
+    def __init__(self, icon, label, parent=None):
+        super().__init__(f"  {icon}  {label}", parent)
+        self.setStyleSheet(self.NORMAL)
+        self._active = False
+
+    def set_active(self, active: bool):
+        self._active = active
+        self.setStyleSheet(self.ACTIVE if active else self.NORMAL)
+
+
 class MainWindow(QWidget):
     def __init__(self):
         super().__init__()
-
         self.setWindowTitle("Timetable Gen")
         self.showMaximized()
 
+        # Apply global stylesheet
+        QApplication.instance().setStyleSheet(theme.GLOBAL_QSS)
+
+        self._nav_buttons = []
+
+        # Pages
+        self.ManageClasses        = ManageClasses(self)
+        self.settings_page        = SettingsPage(self)
+        self.manage_teachers_page = ManageTeachers(self)
+        self.pdf_exporter_page    = PDFExporterPage(self)
+        self.home_page            = self._build_home()
+
+        # Stack
         self.stack = QStackedWidget()
-
-        # Create pages
-        self.ManageClasses         = ManageClasses(self)
-        self.settings_page         = SettingsPage(self)
-        self.manage_teachers_page  = ManageTeachers(self)
-        self.pdf_exporter_page     = PDFExporterPage(self)
-        self.home_page             = self.create_home_page()
-
-        # Add pages to stack
         self.stack.addWidget(self.home_page)
-        self.stack.addWidget(self.settings_page)
         self.stack.addWidget(self.ManageClasses)
         self.stack.addWidget(self.manage_teachers_page)
         self.stack.addWidget(self.pdf_exporter_page)
+        self.stack.addWidget(self.settings_page)
 
-        # Layout
-        main_layout = QVBoxLayout()
-        main_layout.addWidget(self.stack)
-        self.setLayout(main_layout)
+        # Root layout: sidebar + stack
+        root = QHBoxLayout()
+        root.setContentsMargins(0, 0, 0, 0)
+        root.setSpacing(0)
+        root.addWidget(self._build_sidebar())
+        root.addWidget(self.stack, 1)
+        self.setLayout(root)
 
-        self.apply_base_style()
-        self.dynamic_scaling_home()
-
-        # Check for updates in background — never blocks the UI
         threading.Thread(target=self._check_update_async, daemon=True).start()
 
-    # ---------------- Async update check ----------------
-    def _check_update_async(self):
-        """Runs on a background thread so startup is never delayed."""
-        try:
-            check_for_update(parent=None)   # don't pass parent — we're off the main thread
-        except Exception:
-            pass   # update check failing should never crash the app
+    # ── Sidebar ───────────────────────────────────────────────────────────────
 
-    # ---------------- Base style ----------------
-    def apply_base_style(self):
-        self.setStyleSheet("""
-            QWidget {
-                background-color: #121212;
-            }
-
-            QFrame {
-                background-color: #1c1c1c;
-                border: 3px solid #2a2a2a;
-                border-radius: 20px;
-            }
-
-            QPushButton {
-                background-color: qlineargradient(
-                    x1:0, y1:0,
-                    x2:1, y2:1,
-                    stop:0 #0f3d2e,
-                    stop:1 #1b2a4a
-                );
-                color: white;
-                border: 2px solid #2f2f2f;
-                border-radius: 15px;
-            }
-
-            QPushButton:hover {
-                background-color: qlineargradient(
-                    x1:0, y1:0,
-                    x2:1, y2:1,
-                    stop:0 #145c43,
-                    stop:1 #243b6b
-                );
-            }
+    def _build_sidebar(self):
+        sidebar = QFrame()
+        sidebar.setFixedWidth(240)
+        sidebar.setStyleSheet(f"""
+            QFrame {{
+                background-color: {theme.SURFACE};
+                border: none;
+                border-right: 1px solid {theme.BORDER};
+                border-radius: 0px;
+            }}
         """)
 
-    # ---------------- Home page ----------------
-    def create_home_page(self):
+        layout = QVBoxLayout(sidebar)
+        layout.setContentsMargins(14, 28, 14, 28)
+        layout.setSpacing(6)
+
+        # Logo / app name
+        logo = QLabel("⬡")
+        logo.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        logo.setStyleSheet(f"color: {theme.ACCENT1}; font-size: 36px; padding-bottom: 2px;")
+        layout.addWidget(logo)
+
+        app_name = QLabel("Timetable Gen")
+        app_name.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        app_name.setStyleSheet(f"""
+            color: {theme.TEXT_PRI};
+            font-size: 15px;
+            font-weight: 700;
+            letter-spacing: 0.5px;
+            padding-bottom: 20px;
+        """)
+        layout.addWidget(app_name)
+
+        # Divider
+        div = QFrame()
+        div.setFrameShape(QFrame.Shape.HLine)
+        div.setStyleSheet(f"color: {theme.BORDER}; margin-bottom: 10px;")
+        layout.addWidget(div)
+
+        # Nav items
+        page_map = {
+            "Manage Classes":    self.ManageClasses,
+            "Manage Teachers":   self.manage_teachers_page,
+            "Generate / Export": self.pdf_exporter_page,
+            "Settings":          self.settings_page,
+        }
+
+        for label, icon, _ in NAV_ITEMS:
+            btn = NavButton(icon, label)
+            btn.clicked.connect(lambda checked, lbl=label, pg=page_map[label]: self._nav_to(lbl, pg))
+            layout.addWidget(btn)
+            self._nav_buttons.append((label, btn))
+
+        layout.addStretch()
+
+        # Home button at bottom
+        home_btn = QPushButton("⌂  Home")
+        home_btn.setStyleSheet(theme.btn_ghost(padding_v=10, radius=10, font_size=13))
+        home_btn.clicked.connect(self.go_home)
+        layout.addWidget(home_btn)
+
+        return sidebar
+
+    def _nav_to(self, label, page):
+        self.stack.setCurrentWidget(page)
+        for lbl, btn in self._nav_buttons:
+            btn.set_active(lbl == label)
+
+    # ── Home page ─────────────────────────────────────────────────────────────
+
+    def _build_home(self):
         page = QWidget()
-        self.home_layout = QVBoxLayout()
-        self.home_layout.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self.home_layout.setSpacing(30)
-        self.home_layout.setContentsMargins(60, 40, 60, 40)
+        page.setStyleSheet(f"background-color: {theme.BG};")
 
-        # Title
-        self.title = QLabel("Timetable Gen")
-        self.title.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        outer = QVBoxLayout(page)
+        outer.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        outer.setContentsMargins(80, 60, 80, 60)
+        outer.setSpacing(0)
 
-        # Button container
-        self.button_box = QFrame()
-        self.box_layout = QVBoxLayout()
-        self.box_layout.setSpacing(25)
+        # Hero title
+        title = QLabel("Timetable Gen")
+        title.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        title.setStyleSheet(f"""
+            font-size: 56px;
+            font-weight: 800;
+            color: {theme.ACCENT1};
+            letter-spacing: 2px;
+            padding-bottom: 6px;
+        """)
+        outer.addWidget(title)
 
-        # Buttons
-        self.buttons = []
+        sub = QLabel("Smart constraint-based school scheduling")
+        sub.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        sub.setStyleSheet(f"color: {theme.TEXT_SEC}; font-size: 15px; padding-bottom: 52px;")
+        outer.addWidget(sub)
 
-        btn_manage_classes   = QPushButton("Manage Classes")
-        btn_manage_teachers  = QPushButton("Manage Teachers")
-        btn_generate         = QPushButton("Select the Excel Exporter Type")
-        btn_settings         = QPushButton("Settings")
+        # Card grid — 2×2
+        grid_widget = QWidget()
+        grid_widget.setStyleSheet("background: transparent;")
+        grid = QHBoxLayout(grid_widget)
+        grid.setSpacing(20)
+        grid.setContentsMargins(0, 0, 0, 0)
 
-        btn_manage_classes.clicked.connect(
-            lambda: self.stack.setCurrentWidget(self.ManageClasses)
-        )
-        btn_manage_teachers.clicked.connect(
-            lambda: self.stack.setCurrentWidget(self.manage_teachers_page)
-        )
-        btn_settings.clicked.connect(
-            lambda: self.stack.setCurrentWidget(self.settings_page)
-        )
-        btn_generate.clicked.connect(
-            lambda: self.stack.setCurrentWidget(self.pdf_exporter_page)
-        )
+        cards = [
+            ("◈", "Manage Classes",    "Add, edit and organise your class list",           self.ManageClasses),
+            ("✦", "Manage Teachers",   "Assign teachers and schedules",                     self.manage_teachers_page),
+            ("⬡", "Generate / Export", "Generate timetables and export to Excel",          self.pdf_exporter_page),
+            ("⚙", "Settings",          "Help, version info and app details",               self.settings_page),
+        ]
 
-        self.buttons.extend([
-            btn_manage_classes,
-            btn_manage_teachers,
-            btn_generate,
-            btn_settings
-        ])
+        for icon, label, desc, page_ref in cards:
+            card = self._home_card(icon, label, desc, page_ref)
+            grid.addWidget(card)
 
-        for btn in self.buttons:
-            self.box_layout.addWidget(btn)
-
-        self.button_box.setLayout(self.box_layout)
-
-        self.home_layout.addWidget(self.title)
-        self.home_layout.addWidget(self.button_box)
-
-        page.setLayout(self.home_layout)
+        outer.addWidget(grid_widget)
         return page
 
-    # ---------------- Dynamic scaling ----------------
-    def resizeEvent(self, event):
-        self.dynamic_scaling_home()
-        if hasattr(self, "ManageClasses") and hasattr(self.ManageClasses, "dynamic_scaling"):
-            self.ManageClasses.dynamic_scaling()
-        if hasattr(self, "manage_teachers_page") and hasattr(self.manage_teachers_page, "dynamic_scaling"):
-            self.manage_teachers_page.dynamic_scaling()
-        if hasattr(self, "settings_page") and hasattr(self.settings_page, "dynamic_scaling"):
-            self.settings_page.dynamic_scaling()
-        if hasattr(self, "pdf_exporter_page") and hasattr(self.pdf_exporter_page, "dynamic_scaling"):
-            self.pdf_exporter_page.dynamic_scaling()
-        super().resizeEvent(event)
-
-    def dynamic_scaling_home(self):
-        if not hasattr(self, "title"):
-            return
-
-        width = self.width()
-
-        title_size = max(40, width // 20)
-        self.title.setFont(QFont("Arial", title_size, QFont.Weight.Bold))
-        self.title.setStyleSheet("""
-            QLabel {
-                color: qlineargradient(
-                    x1:0, y1:0,
-                    x2:1, y2:0,
-                    stop:0 #ff4ecd,
-                    stop:1 #a855f7
-                );
-                margin-bottom: 50px;
-            }
+    def _home_card(self, icon, label, desc, page_ref):
+        card = QFrame()
+        card.setFixedHeight(200)
+        card.setStyleSheet(f"""
+            QFrame {{
+                background-color: {theme.SURFACE};
+                border: 1px solid {theme.BORDER};
+                border-radius: 18px;
+            }}
+            QFrame:hover {{
+                border: 1px solid {theme.ACCENT1};
+                background-color: {theme.SURFACE2};
+            }}
         """)
+        card.setCursor(Qt.CursorShape.PointingHandCursor)
 
-        button_font_size = max(18, width // 60)
-        padding          = max(15, width // 120)
+        lay = QVBoxLayout(card)
+        lay.setContentsMargins(28, 28, 28, 28)
+        lay.setSpacing(10)
+        lay.setAlignment(Qt.AlignmentFlag.AlignTop)
 
-        for btn in self.buttons:
-            btn.setFont(QFont("Arial", button_font_size))
-            btn.setStyleSheet(f"""
-                QPushButton {{
-                    background-color: qlineargradient(
-                        x1:0, y1:0,
-                        x2:1, y2:1,
-                        stop:0 #0f3d2e,
-                        stop:1 #1b2a4a
-                    );
-                    color: white;
-                    border: 2px solid #2f2f2f;
-                    border-radius: 20px;
-                    padding: {padding}px;
-                }}
+        ic = QLabel(icon)
+        ic.setStyleSheet(f"color: {theme.ACCENT1}; font-size: 30px; background: transparent; border: none;")
+        lay.addWidget(ic)
 
-                QPushButton:hover {{
-                    background-color: qlineargradient(
-                        x1:0, y1:0,
-                        x2:1, y2:1,
-                        stop:0 #145c43,
-                        stop:1 #243b6b
-                    );
-                }}
-            """)
+        lbl = QLabel(label)
+        lbl.setStyleSheet(f"color: {theme.TEXT_PRI}; font-size: 16px; font-weight: 700; background: transparent; border: none;")
+        lay.addWidget(lbl)
+
+        dsc = QLabel(desc)
+        dsc.setStyleSheet(f"color: {theme.TEXT_SEC}; font-size: 12px; background: transparent; border: none;")
+        dsc.setWordWrap(True)
+        lay.addWidget(dsc)
+
+        lay.addStretch()
+
+        go = QPushButton("Open →")
+        go.setStyleSheet(theme.btn_primary(padding_v=8, radius=10, font_size=12))
+        go.clicked.connect(lambda: self.stack.setCurrentWidget(page_ref))
+        lay.addWidget(go)
+
+        return card
+
+    # ── Helpers ───────────────────────────────────────────────────────────────
 
     def go_home(self):
         self.stack.setCurrentWidget(self.home_page)
+        for _, btn in self._nav_buttons:
+            btn.set_active(False)
 
+    def _check_update_async(self):
+        try:
+            check_for_update(parent=None)
+        except Exception:
+            pass
 
-# -------------------------------------------------------
-# ENTRY POINT
-# multiprocessing.freeze_support() is required on Windows
-# when the app is bundled (e.g. with PyInstaller).
-# The `if __name__ == "__main__"` guard is required for
-# multiprocessing to work correctly on Windows — without it,
-# spawning a worker process recursively re-runs the whole
-# script and crashes.
-# -------------------------------------------------------
+    def resizeEvent(self, event):
+        # Guard: __init__ may not have finished yet when the first resize fires
+        if not hasattr(self, "ManageClasses"):
+            super().resizeEvent(event)
+            return
+        for page in [self.ManageClasses, self.manage_teachers_page,
+                     self.settings_page, self.pdf_exporter_page]:
+            if hasattr(page, "dynamic_scaling"):
+                page.dynamic_scaling()
+        super().resizeEvent(event)
+
 
 if __name__ == "__main__":
     multiprocessing.freeze_support()

@@ -910,10 +910,22 @@ def _build_excel(timetable, backend_grid, best_empty, msc_data, classes):
                     owners  = practical_teachers[subject](cls)
                     display = grade_label if subject in MATHS_BLOCK_SUBJECTS else cls
                     for t in owners:
-                        write_slot(t, day, period, display)
+                        if subject in MATHS_BLOCK_SUBJECTS:
+                            # Overwrite with grade label only — never append
+                            if t in teacher_slot_map:
+                                teacher_slot_map[t][day][period] = display
+                        else:
+                            write_slot(t, day, period, display)
                 else:
                     owners = [t.strip() for t in cell_teacher.replace(",", "&").split("&") if t.strip()]
                     for t in owners:
+                        # If this is a maths-busy teacher and the slot already
+                        # holds a grade label (digits only), don't overwrite it
+                        if (t in MATHS_BUSY_TEACHERS
+                                and t in teacher_slot_map
+                                and teacher_slot_map[t][day][period] is not None
+                                and str(teacher_slot_map[t][day][period]).isdigit()):
+                            continue
                         write_slot(t, day, period, cls)
 
     for teacher, info in msc_data.items():

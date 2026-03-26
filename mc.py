@@ -1,3 +1,5 @@
+# mc.py
+
 import json
 import os
 from PyQt6.QtWidgets import (
@@ -8,6 +10,7 @@ from PyQt6.QtWidgets import (
 from PyQt6.QtCore import Qt
 from PyQt6.QtGui import QFont
 
+import theme
 from paths import CLASSES_FILE
 
 
@@ -28,35 +31,39 @@ class EditClassDialog(QDialog):
     def __init__(self, old_name, existing_classes, parent=None):
         super().__init__(parent)
         self.setWindowTitle("Edit Class")
-        self.setFixedSize(400, 180)
+        self.setFixedSize(420, 200)
+        self.setStyleSheet(theme.dialog_style())
 
-        self.old_name = old_name
+        self.old_name        = old_name
         self.existing_classes = existing_classes
-        self.new_name = None
+        self.new_name        = None
 
-        layout = QVBoxLayout()
-        layout.setSpacing(8)
+        root = QVBoxLayout(self)
+        root.setSpacing(14)
+        root.setContentsMargins(28, 24, 28, 24)
 
-        self.label = QLabel("Edit Class Name:")
-        layout.addWidget(self.label)
+        lbl = QLabel("Edit class name")
+        lbl.setStyleSheet(f"color: {theme.TEXT_SEC}; font-size: 12px;")
+        root.addWidget(lbl)
 
         self.input = QLineEdit(old_name)
+        self.input.setStyleSheet(theme.input_style())
         self.input.returnPressed.connect(self.accept_edit)
-        layout.addWidget(self.input)
+        root.addWidget(self.input)
 
-        btn_layout = QHBoxLayout()
-        self.done_btn = QPushButton("Done")
-        self.done_btn.clicked.connect(self.accept_edit)
+        btns = QHBoxLayout()
+        btns.setSpacing(10)
         self.cancel_btn = QPushButton("Cancel")
+        self.cancel_btn.setStyleSheet(theme.btn_ghost(padding_v=10, radius=10, font_size=13))
         self.cancel_btn.clicked.connect(self.reject)
-        btn_layout.addWidget(self.done_btn)
-        btn_layout.addWidget(self.cancel_btn)
 
-        layout.addLayout(btn_layout)
-        self.setLayout(layout)
+        self.done_btn = QPushButton("Save")
+        self.done_btn.setStyleSheet(theme.btn_primary(padding_v=10, radius=10, font_size=13))
+        self.done_btn.clicked.connect(self.accept_edit)
 
-        # Initial scaling
-        self.dynamic_scaling()
+        btns.addWidget(self.cancel_btn)
+        btns.addWidget(self.done_btn)
+        root.addLayout(btns)
 
     def accept_edit(self):
         text = self.input.text().strip()
@@ -68,31 +75,7 @@ class EditClassDialog(QDialog):
         self.new_name = text
         self.accept()
 
-    def dynamic_scaling(self):
-        width = self.width()
-        for lbl in [self.label]:
-            lbl.setFont(QFont("Arial", max(10, width // 40)))
-        self.input.setFont(QFont("Arial", max(10, width // 45)))
-        for btn in [self.done_btn, self.cancel_btn]:
-            btn.setFont(QFont("Arial", max(10, width // 45)))
-            btn.setStyleSheet(f"""
-                QPushButton {{
-                    padding: 6px 12px;
-                    border-radius: 12px;
-                    background-color: qlineargradient(
-                        x1:0, y1:0, x2:1, y2:1,
-                        stop:0 #0f3d2e, stop:1 #1b2a4a
-                    );
-                    color: white;
-                    border: 1px solid #2f2f2f;
-                }}
-                QPushButton:hover {{
-                    background-color: qlineargradient(
-                        x1:0, y1:0, x2:1, y2:1,
-                        stop:0 #145c43, stop:1 #243b6b
-                    );
-                }}
-            """)
+    def dynamic_scaling(self): pass   # kept for compatibility
 
 
 class ManageClasses(QWidget):
@@ -100,47 +83,73 @@ class ManageClasses(QWidget):
         super().__init__(parent)
         self.parent_window = parent
         self.classes = load_classes()
-        self.init_ui()
+        self._init_ui()
         self.refresh_list()
-        self.dynamic_scaling()
 
-    def init_ui(self):
-        self.layout = QVBoxLayout()
-        self.layout.setAlignment(Qt.AlignmentFlag.AlignTop)
-        self.layout.setSpacing(15)
-        self.layout.setContentsMargins(50, 40, 50, 40)
+    def _init_ui(self):
+        root = QVBoxLayout(self)
+        root.setContentsMargins(48, 40, 48, 40)
+        root.setSpacing(20)
+        root.setAlignment(Qt.AlignmentFlag.AlignTop)
 
+        # Header row
+        header = QHBoxLayout()
         self.back_btn = QPushButton("← Back")
+        self.back_btn.setStyleSheet(theme.btn_back())
+        self.back_btn.setFixedWidth(100)
         self.back_btn.clicked.connect(self.go_back)
-        self.layout.addWidget(self.back_btn)
+        header.addWidget(self.back_btn)
+        header.addStretch()
+        root.addLayout(header)
 
+        # Title
         self.title = QLabel("Manage Classes")
-        self.title.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self.layout.addWidget(self.title)
+        self.title.setStyleSheet(theme.title_style(28))
+        root.addWidget(self.title)
 
+        sub = QLabel("Add and manage the classes in your school")
+        sub.setStyleSheet(theme.subtitle_style())
+        root.addWidget(sub)
+
+        # Input row
+        input_row = QHBoxLayout()
+        input_row.setSpacing(12)
         self.input = QLineEdit()
-        self.input.setPlaceholderText("Enter class (e.g., 11A)")
+        self.input.setPlaceholderText("Enter class name  (e.g. 11A)")
+        self.input.setStyleSheet(theme.input_style())
+        self.input.setFixedHeight(44)
         self.input.returnPressed.connect(self.add_class)
-        self.layout.addWidget(self.input)
+        input_row.addWidget(self.input)
 
-        btn_layout = QHBoxLayout()
         self.add_btn = QPushButton("Add")
-        self.edit_btn = QPushButton("Edit")
-        self.delete_btn = QPushButton("Delete")
-
+        self.add_btn.setStyleSheet(theme.btn_primary(padding_v=10, radius=10, font_size=13))
+        self.add_btn.setFixedWidth(90)
+        self.add_btn.setFixedHeight(44)
         self.add_btn.clicked.connect(self.add_class)
+        input_row.addWidget(self.add_btn)
+        root.addLayout(input_row)
+
+        # Action buttons
+        action_row = QHBoxLayout()
+        action_row.setSpacing(10)
+
+        self.edit_btn = QPushButton("✎  Edit Selected")
+        self.edit_btn.setStyleSheet(theme.btn_ghost(padding_v=9, radius=10, font_size=13))
         self.edit_btn.clicked.connect(self.edit_class)
+
+        self.delete_btn = QPushButton("✕  Delete Selected")
+        self.delete_btn.setStyleSheet(theme.btn_danger(padding_v=9, radius=10, font_size=13))
         self.delete_btn.clicked.connect(self.delete_class)
 
-        btn_layout.addWidget(self.add_btn)
-        btn_layout.addWidget(self.edit_btn)
-        btn_layout.addWidget(self.delete_btn)
-        self.layout.addLayout(btn_layout)
+        action_row.addWidget(self.edit_btn)
+        action_row.addWidget(self.delete_btn)
+        action_row.addStretch()
+        root.addLayout(action_row)
 
+        # List
         self.list_widget = QListWidget()
-        self.layout.addWidget(self.list_widget)
-
-        self.setLayout(self.layout)
+        self.list_widget.setStyleSheet(theme.list_style())
+        root.addWidget(self.list_widget)
 
     def go_back(self):
         if self.parent_window:
@@ -177,19 +186,9 @@ class ManageClasses(QWidget):
             QMessageBox.warning(self, "Warning", "Select a class first!")
             return
         dialog = EditClassDialog(self.classes[row], self.classes, self)
-        dialog.dynamic_scaling()
         if dialog.exec():
             self.classes[row] = dialog.new_name
             save_classes(self.classes)
             self.refresh_list()
 
-    def dynamic_scaling(self):
-        width = self.parent_window.width() if self.parent_window else self.width()
-
-        # Smaller, readable fonts
-        self.title.setFont(QFont("Arial", max(16, width // 50)))
-        self.back_btn.setFont(QFont("Arial", max(12, width // 60)))
-        self.input.setFont(QFont("Arial", max(12, width // 60)))
-        for btn in [self.add_btn, self.edit_btn, self.delete_btn]:
-            btn.setFont(QFont("Arial", max(12, width // 60)))
-        self.list_widget.setFont(QFont("Arial", max(12, width // 60)))
+    def dynamic_scaling(self): pass

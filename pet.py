@@ -11,9 +11,7 @@ from PyQt6.QtGui import QFont
 
 from get import generate_timetable_async
 from tw import generate_teacherwise_pdf
-
-def generate_daywise_pdf():
-    return "Day-wise Excel generator is still under development."
+from dw import generate_daywise_pdf
 
 
 # ----------------------------------------------------------------
@@ -429,11 +427,28 @@ class PDFExporterPage(QWidget):
         threading.Thread(target=_worker, daemon=True).start()
 
     def run_daywise_pdf(self):
-        try:
-            msg = generate_daywise_pdf()
-            QMessageBox.information(self, "Info", msg)
-        except Exception as e:
-            QMessageBox.critical(self, "Error", f"Error generating day-wise PDF:\n{e}")
+        if self._generating:
+            return
+
+        self._set_busy("Generating day-wise timetable… please wait.", total=0)
+        self.progress_bar.setRange(0, 0)
+
+        def _worker():
+            try:
+                msg = generate_daywise_pdf()
+                QMetaObject.invokeMethod(
+                    self, "_on_generation_done",
+                    Qt.ConnectionType.QueuedConnection,
+                    Q_ARG(str, str(msg))
+                )
+            except Exception as exc:
+                QMetaObject.invokeMethod(
+                    self, "_on_generation_error",
+                    Qt.ConnectionType.QueuedConnection,
+                    Q_ARG(str, f"Error generating day-wise Excel:\n{exc}")
+                )
+
+        threading.Thread(target=_worker, daemon=True).start()
 
     def go_back(self):
         if self._generating:

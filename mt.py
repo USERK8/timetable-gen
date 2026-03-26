@@ -1,3 +1,5 @@
+# mt.py
+
 import json
 import os
 from PyQt6.QtWidgets import (
@@ -7,10 +9,10 @@ from PyQt6.QtWidgets import (
 from PyQt6.QtCore import Qt
 from PyQt6.QtGui import QFont
 
+import theme
 from paths import TEACH_FILE, CLASSES_FILE, MSC_FILE
 
 
-# ------------------- Load / Save -------------------
 def load_teachers():
     if not os.path.exists(TEACH_FILE):
         return []
@@ -23,142 +25,153 @@ def save_teachers(data):
         json.dump(data, f, indent=4)
 
 
-# ------------------- Edit Teacher Dialog -------------------
 class EditTeacherDialog(QDialog):
     def __init__(self, teacher_data, parent=None):
         super().__init__(parent)
         self.setWindowTitle("Edit Teacher")
-        self.setFixedSize(400, 200)
+        self.setFixedSize(420, 240)
+        self.setStyleSheet(theme.dialog_style())
 
         self.teacher_data = teacher_data
-        self.result_data = None
+        self.result_data  = None
 
-        layout = QVBoxLayout()
-        layout.setSpacing(8)
+        root = QVBoxLayout(self)
+        root.setSpacing(14)
+        root.setContentsMargins(28, 24, 28, 24)
 
-        self.label_name = QLabel("Teacher Name:")
-        layout.addWidget(self.label_name)
-        self.name_input = QLineEdit()
-        self.name_input.setText(teacher_data["name"])
-        layout.addWidget(self.name_input)
+        title = QLabel("Edit Teacher")
+        title.setStyleSheet(f"color: {theme.ACCENT1}; font-size: 16px; font-weight: 700;")
+        root.addWidget(title)
 
-        self.label_subject = QLabel("Subject:")
-        layout.addWidget(self.label_subject)
-        self.subject_input = QLineEdit()
-        self.subject_input.setText(teacher_data["subject"])
-        layout.addWidget(self.subject_input)
+        lbl_name = QLabel("Teacher Name")
+        lbl_name.setStyleSheet(f"color: {theme.TEXT_SEC}; font-size: 11px;")
+        root.addWidget(lbl_name)
+        self.name_input = QLineEdit(teacher_data["name"])
+        self.name_input.setStyleSheet(theme.input_style())
+        root.addWidget(self.name_input)
 
-        btn_layout = QHBoxLayout()
-        self.done_btn = QPushButton("Done")
-        self.done_btn.clicked.connect(self.accept_edit)
-        self.cancel_btn = QPushButton("Cancel")
-        self.cancel_btn.clicked.connect(self.reject)
-        btn_layout.addWidget(self.done_btn)
-        btn_layout.addWidget(self.cancel_btn)
-        layout.addLayout(btn_layout)
+        lbl_sub = QLabel("Subject")
+        lbl_sub.setStyleSheet(f"color: {theme.TEXT_SEC}; font-size: 11px;")
+        root.addWidget(lbl_sub)
+        self.subject_input = QLineEdit(teacher_data["subject"])
+        self.subject_input.setStyleSheet(theme.input_style())
+        root.addWidget(self.subject_input)
 
-        self.setLayout(layout)
         self.name_input.returnPressed.connect(self.accept_edit)
         self.subject_input.returnPressed.connect(self.accept_edit)
 
-        self.dynamic_scaling()
+        btns = QHBoxLayout()
+        btns.setSpacing(10)
+        cancel = QPushButton("Cancel")
+        cancel.setStyleSheet(theme.btn_ghost(padding_v=10, radius=10, font_size=13))
+        cancel.clicked.connect(self.reject)
+        save = QPushButton("Save")
+        save.setStyleSheet(theme.btn_primary(padding_v=10, radius=10, font_size=13))
+        save.clicked.connect(self.accept_edit)
+        btns.addWidget(cancel)
+        btns.addWidget(save)
+        root.addLayout(btns)
 
     def accept_edit(self):
-        name = self.name_input.text().strip()
+        name    = self.name_input.text().strip()
         subject = self.subject_input.text().strip()
         if not name or not subject:
             return
         self.result_data = {"name": name, "subject": subject}
         self.accept()
 
-    def dynamic_scaling(self):
-        width = self.width()
-        # Reasonable smaller font sizes
-        for lbl in [self.label_name, self.label_subject]:
-            lbl.setFont(QFont("Arial", max(10, width // 40)))
-        for inp in [self.name_input, self.subject_input]:
-            inp.setFont(QFont("Arial", max(10, width // 45)))
-        for btn in [self.done_btn, self.cancel_btn]:
-            btn.setFont(QFont("Arial", max(10, width // 45)))
-            btn.setStyleSheet(f"""
-                QPushButton {{
-                    padding: 6px 12px;
-                    border-radius: 12px;
-                    background-color: qlineargradient(
-                        x1:0, y1:0, x2:1, y2:1,
-                        stop:0 #0f3d2e, stop:1 #1b2a4a
-                    );
-                    color: white;
-                    border: 1px solid #2f2f2f;
-                }}
-                QPushButton:hover {{
-                    background-color: qlineargradient(
-                        x1:0, y1:0, x2:1, y2:1,
-                        stop:0 #145c43, stop:1 #243b6b
-                    );
-                }}
-            """)
+    def dynamic_scaling(self): pass
 
 
-# ------------------- Manage Teachers Page -------------------
 class ManageTeachers(QWidget):
     def __init__(self, parent=None):
         super().__init__(parent)
         self.parent_window = parent
-        self.teachers = load_teachers()
-        self.init_ui()
+        self.teachers      = load_teachers()
+        self._init_ui()
         self.refresh_list()
-        self.dynamic_scaling()
 
-    def init_ui(self):
-        self.layout = QVBoxLayout()
-        self.layout.setAlignment(Qt.AlignmentFlag.AlignTop)
-        self.layout.setSpacing(15)
-        self.layout.setContentsMargins(50, 40, 50, 40)
+    def _init_ui(self):
+        root = QVBoxLayout(self)
+        root.setContentsMargins(48, 40, 48, 40)
+        root.setSpacing(18)
+        root.setAlignment(Qt.AlignmentFlag.AlignTop)
 
+        # Header
+        header = QHBoxLayout()
         self.back_btn = QPushButton("← Back")
+        self.back_btn.setStyleSheet(theme.btn_back())
+        self.back_btn.setFixedWidth(100)
         self.back_btn.clicked.connect(self.go_back)
-        self.layout.addWidget(self.back_btn)
+        header.addWidget(self.back_btn)
+        header.addStretch()
+        root.addLayout(header)
 
-        self.title = QLabel("Manage Teachers")
-        self.title.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self.layout.addWidget(self.title)
+        title = QLabel("Manage Teachers")
+        title.setStyleSheet(theme.title_style(28))
+        root.addWidget(title)
 
+        sub = QLabel("Add teachers, assign subjects and manage their schedules")
+        sub.setStyleSheet(theme.subtitle_style())
+        root.addWidget(sub)
+
+        # Input row
+        inputs = QHBoxLayout()
+        inputs.setSpacing(12)
         self.name_input = QLineEdit()
-        self.name_input.setPlaceholderText("Teacher Name")
-        self.layout.addWidget(self.name_input)
+        self.name_input.setPlaceholderText("Teacher name")
+        self.name_input.setStyleSheet(theme.input_style())
+        self.name_input.setFixedHeight(44)
+        self.name_input.returnPressed.connect(self.add_teacher)
 
         self.subject_input = QLineEdit()
         self.subject_input.setPlaceholderText("Subject")
-        self.layout.addWidget(self.subject_input)
-
-        self.name_input.returnPressed.connect(self.add_teacher)
+        self.subject_input.setStyleSheet(theme.input_style())
+        self.subject_input.setFixedHeight(44)
         self.subject_input.returnPressed.connect(self.add_teacher)
 
-        btn_layout = QHBoxLayout()
         self.add_btn = QPushButton("Add")
-        self.edit_btn = QPushButton("Edit")
-        self.delete_btn = QPushButton("Delete")
-        self.schedule_btn = QPushButton("Manage Teacher's Schedule")
-        self.engagement_btn = QPushButton("See Teacher Engagement")
-
+        self.add_btn.setStyleSheet(theme.btn_primary(padding_v=10, radius=10, font_size=13))
+        self.add_btn.setFixedWidth(90)
+        self.add_btn.setFixedHeight(44)
         self.add_btn.clicked.connect(self.add_teacher)
+
+        inputs.addWidget(self.name_input, 2)
+        inputs.addWidget(self.subject_input, 2)
+        inputs.addWidget(self.add_btn)
+        root.addLayout(inputs)
+
+        # Action buttons row
+        actions = QHBoxLayout()
+        actions.setSpacing(10)
+
+        self.edit_btn = QPushButton("✎  Edit")
+        self.edit_btn.setStyleSheet(theme.btn_ghost(padding_v=9, radius=10, font_size=13))
         self.edit_btn.clicked.connect(self.edit_teacher)
+
+        self.delete_btn = QPushButton("✕  Delete")
+        self.delete_btn.setStyleSheet(theme.btn_danger(padding_v=9, radius=10, font_size=13))
         self.delete_btn.clicked.connect(self.delete_teacher)
+
+        self.schedule_btn = QPushButton("📋  Manage Schedule")
+        self.schedule_btn.setStyleSheet(theme.btn_ghost(padding_v=9, radius=10, font_size=13))
         self.schedule_btn.clicked.connect(self.manage_schedule)
+
+        self.engagement_btn = QPushButton("📊  Teacher Engagement")
+        self.engagement_btn.setStyleSheet(theme.btn_ghost(padding_v=9, radius=10, font_size=13))
         self.engagement_btn.clicked.connect(self.show_engagement)
 
-        btn_layout.addWidget(self.add_btn)
-        btn_layout.addWidget(self.edit_btn)
-        btn_layout.addWidget(self.delete_btn)
-        self.layout.addLayout(btn_layout)
-        self.layout.addWidget(self.schedule_btn)
-        self.layout.addWidget(self.engagement_btn)
+        actions.addWidget(self.edit_btn)
+        actions.addWidget(self.delete_btn)
+        actions.addWidget(self.schedule_btn)
+        actions.addWidget(self.engagement_btn)
+        actions.addStretch()
+        root.addLayout(actions)
 
+        # List
         self.list_widget = QListWidget()
-        self.layout.addWidget(self.list_widget)
-
-        self.setLayout(self.layout)
+        self.list_widget.setStyleSheet(theme.list_style())
+        root.addWidget(self.list_widget)
 
     def go_back(self):
         if self.parent_window:
@@ -166,11 +179,11 @@ class ManageTeachers(QWidget):
 
     def refresh_list(self):
         self.list_widget.clear()
-        for teacher in self.teachers:
-            self.list_widget.addItem(f"{teacher['name']} — {teacher['subject']}")
+        for t in self.teachers:
+            self.list_widget.addItem(f"{t['name']}  ·  {t['subject']}")
 
     def add_teacher(self):
-        name = self.name_input.text().strip()
+        name    = self.name_input.text().strip()
         subject = self.subject_input.text().strip()
         if not name or not subject:
             return
@@ -199,7 +212,6 @@ class ManageTeachers(QWidget):
             QMessageBox.warning(self, "Warning", "Select a teacher first!")
             return
         dialog = EditTeacherDialog(self.teachers[row], self)
-        dialog.dynamic_scaling()
         if dialog.exec():
             self.teachers[row] = dialog.result_data
             save_teachers(self.teachers)
@@ -220,18 +232,6 @@ class ManageTeachers(QWidget):
 
     def show_engagement(self):
         from mts import EngagementDialog
-        dlg = EngagementDialog(self)
-        dlg.exec()
+        EngagementDialog(self).exec()
 
-    def dynamic_scaling(self):
-        width = self.parent_window.width() if self.parent_window else self.width()
-
-        # Reasonable smaller fonts
-        self.title.setFont(QFont("Arial", max(16, width // 50)))
-        self.back_btn.setFont(QFont("Arial", max(12, width // 60)))
-        self.name_input.setFont(QFont("Arial", max(12, width // 60)))
-        self.subject_input.setFont(QFont("Arial", max(12, width // 60)))
-        for btn in [self.add_btn, self.edit_btn, self.delete_btn,
-                    self.schedule_btn, self.engagement_btn]:
-            btn.setFont(QFont("Arial", max(12, width // 60)))
-        self.list_widget.setFont(QFont("Arial", max(12, width // 60)))
+    def dynamic_scaling(self): pass

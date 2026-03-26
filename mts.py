@@ -1,15 +1,18 @@
+# mts.py
+
 import json
 import os
+
 from PyQt6.QtWidgets import (
     QDialog, QVBoxLayout, QHBoxLayout, QLabel,
     QCheckBox, QInputDialog, QPushButton, QScrollArea,
     QWidget, QSizePolicy
 )
-from PyQt6.QtCore import Qt, QTimer
+from PyQt6.QtCore import Qt
 from PyQt6.QtGui import QFont, QPainter, QColor, QPen, QBrush, QLinearGradient
 from PyQt6.QtCore import QRect, QRectF
 
-from paths import MSC_FILE, CLASSES_FILE
+from paths import MSC_FILE, CLASSES_FILE, BACKEND_FILE
 
 WEEK_MAX = 48   # 6 days × 8 periods
 
@@ -44,70 +47,139 @@ def save_msc(data):
         json.dump(data, f, indent=4)
 
 
+def _load_backend():
+    """Returns (backend_dict, available: bool)"""
+    if not os.path.exists(BACKEND_FILE):
+        return {}, False
+    try:
+        with open(BACKEND_FILE) as f:
+            return json.load(f), True
+    except Exception:
+        return {}, False
+
+
+# -------------------------------------------------------
+# BUILD CHART DATA
+# Combines msc.json (requested) and backend_details.json
+# (actually scheduled) into a single period count per teacher.
+#
+# Strategy:
+#   - msc_total  = sum of periods requested across all classes
+#   - backend_total = count of non-null slots in the grid
+#   - If backend available: value = average of both (rounded)
+#   - If backend missing:   value = msc_total only
+# -------------------------------------------------------
+
+def build_chart_data():
+    """
+    Returns (chart_data, backend_available)
+    chart_data: list of (teacher_name, period_count) sorted desc
+
+    Priority:
+      - If backend_details.json exists: use it as the truth (it includes
+        practicals, maths blocks, everything actually scheduled)
+      - If not: fall back to msc.json totals (what was requested)
+    Averaging would undercount teachers with practical blocks since
+    those extra periods don't appear in msc.json.
+    """
+    msc_data              = load_msc()
+    backend_data, has_backend = _load_backend()
+
+    result = []
+
+    if has_backend:
+        # Use backend as the single source of truth
+        for teacher, info in backend_data.items():
+            if not teacher or teacher.strip() in {"—", "-", ""}:
+                continue
+            grid  = info.get("grid", [])
+            total = sum(
+                1 for day_row in grid
+                for slot in day_row
+                if slot is not None
+            )
+            if total > 0:
+                result.append((teacher, total))
+    else:
+        # Fall back to msc.json requested periods
+        for teacher, info in msc_data.items():
+            if not teacher or teacher.strip() in {"—", "-", ""}:
+                continue
+            total = sum(info.get("classes", {}).values())
+            if total > 0:
+                result.append((teacher, total))
+
+    result.sort(key=lambda x: x[1], reverse=True)
+    return result, has_backend
+
+
 # -------------------------------------------------------
 # BAR CHART WIDGET
 # -------------------------------------------------------
 
 class EngagementChart(QWidget):
-    """Custom bar chart — no matplotlib needed."""
 
-    BAR_COLOR      = QColor("#4a9eff")
-    BAR_WARN_COLOR = QColor("#f0a500")   # approaching limit  (>= 40)
-    BAR_OVER_COLOR = QColor("#e05555")   # over limit         (> 48)
-    BG_COLOR       = QColor("#161616")
-    GRID_COLOR     = QColor("#2a2a2a")
-    TEXT_COLOR      = QColor("#cccccc")
-    LIMIT_COLOR    = QColor("#e05555")
+    BG_COLOR    = QColor("#161616")
+    GRID_COLOR  = QColor("#2a2a2a")
+    TEXT_COLOR  = QColor("#cccccc")
+    LIMIT_COLOR = QColor("#e05555")
 
     PAD_LEFT   = 60
     PAD_RIGHT  = 30
     PAD_TOP    = 30
-    PAD_BOTTOM = 90   # room for rotated teacher names
+    PAD_BOTTOM = 90
 
     def __init__(self, data, parent=None):
-        """data: list of (teacher_name, total_periods) sorted desc."""
         super().__init__(parent)
         self.data = data
         self.setMinimumHeight(420)
         self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
 
+    def _bar_color(self, val):
+        # Stress level colouring
+        ratio = val / WEEK_MAX
+        if ratio > 1.0:
+            return QColor("#e05555")   # overbooked — red
+        elif ratio >= 0.85:
+            return QColor("#f0a500")   # high stress — amber
+        elif ratio >= 0.65:
+            return QColor("#4a9eff")   # moderate — blue
+        else:
+            return QColor("#2ecc71")   # light — green
+
     def paintEvent(self, event):
         if not self.data:
             return
 
-        p   = QPainter(self)
+        p = QPainter(self)
         p.setRenderHint(QPainter.RenderHint.Antialiasing)
 
         W = self.width()
         H = self.height()
-
-        # Background
         p.fillRect(0, 0, W, H, self.BG_COLOR)
 
         chart_w = W - self.PAD_LEFT - self.PAD_RIGHT
         chart_h = H - self.PAD_TOP  - self.PAD_BOTTOM
 
-        max_val  = max(v for _, v in self.data) if self.data else 1
-        y_max    = max(max_val + 4, WEEK_MAX + 4)
+        max_val = max(v for _, v in self.data) if self.data else 1
+        y_max   = max(max_val + 4, WEEK_MAX + 4)
 
-        n        = len(self.data)
-        bar_w    = max(18, min(54, (chart_w - (n + 1) * 6) // n))
-        gap      = (chart_w - n * bar_w) // (n + 1)
+        n     = len(self.data)
+        bar_w = max(18, min(54, (chart_w - (n + 1) * 6) // n))
+        gap   = (chart_w - n * bar_w) // (n + 1)
 
         # Grid lines + Y labels
-        p.setFont(QFont("Arial", 9))
-        step = 8
-        grid_steps = range(0, y_max + 1, step)
-        for val in grid_steps:
+        for val in range(0, y_max + 1, 8):
             y = self.PAD_TOP + chart_h - int(val / y_max * chart_h)
             p.setPen(QPen(self.GRID_COLOR, 1))
             p.drawLine(self.PAD_LEFT, y, self.PAD_LEFT + chart_w, y)
             p.setPen(QPen(self.TEXT_COLOR))
+            p.setFont(QFont("Arial", 9))
             p.drawText(QRect(0, y - 10, self.PAD_LEFT - 6, 20),
                        Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter,
                        str(val))
 
-        # WEEK_MAX limit line
+        # Max limit dashed line
         limit_y = self.PAD_TOP + chart_h - int(WEEK_MAX / y_max * chart_h)
         p.setPen(QPen(self.LIMIT_COLOR, 1, Qt.PenStyle.DashLine))
         p.drawLine(self.PAD_LEFT, limit_y, self.PAD_LEFT + chart_w, limit_y)
@@ -117,33 +189,26 @@ class EngagementChart(QWidget):
 
         # Bars
         for i, (name, val) in enumerate(self.data):
-            x    = self.PAD_LEFT + gap + i * (bar_w + gap)
-            bh   = int(val / y_max * chart_h)
-            y    = self.PAD_TOP + chart_h - bh
+            x  = self.PAD_LEFT + gap + i * (bar_w + gap)
+            bh = max(2, int(val / y_max * chart_h))
+            y  = self.PAD_TOP + chart_h - bh
 
-            if val > WEEK_MAX:
-                color = self.BAR_OVER_COLOR
-            elif val >= 40:
-                color = self.BAR_WARN_COLOR
-            else:
-                color = self.BAR_COLOR
-
-            # Bar with slight gradient
-            grad = QLinearGradient(x, y, x, y + bh)
-            grad.setColorAt(0, color.lighter(120))
+            color = self._bar_color(val)
+            grad  = QLinearGradient(x, y, x, y + bh)
+            grad.setColorAt(0, color.lighter(130))
             grad.setColorAt(1, color)
             p.setBrush(QBrush(grad))
             p.setPen(Qt.PenStyle.NoPen)
             p.drawRoundedRect(QRectF(x, y, bar_w, bh), 4, 4)
 
-            # Value label above bar
+            # Value label
             p.setPen(QPen(self.TEXT_COLOR))
             p.setFont(QFont("Arial", 9, QFont.Weight.Bold))
-            p.drawText(QRect(x, y - 20, bar_w, 18),
+            p.drawText(QRect(int(x), y - 20, bar_w, 18),
                        Qt.AlignmentFlag.AlignHCenter | Qt.AlignmentFlag.AlignVCenter,
                        str(val))
 
-            # Teacher name — rotated below bar
+            # Teacher name rotated
             p.save()
             p.translate(x + bar_w / 2, self.PAD_TOP + chart_h + 10)
             p.rotate(40)
@@ -165,27 +230,27 @@ class EngagementChart(QWidget):
         p.rotate(-90)
         p.setFont(QFont("Arial", 10))
         p.setPen(QPen(self.TEXT_COLOR))
-        p.drawText(QRect(-80, -10, 160, 20),
-                   Qt.AlignmentFlag.AlignCenter, "Periods / week")
+        p.drawText(QRect(-80, -10, 160, 20), Qt.AlignmentFlag.AlignCenter,
+                   "Periods / week")
         p.restore()
 
         p.end()
 
 
 # -------------------------------------------------------
-# ENGAGEMENT GRAPH DIALOG
+# ENGAGEMENT DIALOG
 # -------------------------------------------------------
 
 class EngagementDialog(QDialog):
     def __init__(self, parent=None):
         super().__init__(parent)
         self.setWindowTitle("Teacher Engagement")
-        self.setMinimumSize(820, 560)
+        self.setMinimumSize(820, 580)
         self.setWindowFlag(Qt.WindowType.WindowContextHelpButtonHint, False)
         self.setStyleSheet("QDialog { background-color: #141414; }")
 
         root = QVBoxLayout()
-        root.setSpacing(16)
+        root.setSpacing(14)
         root.setContentsMargins(28, 24, 28, 24)
 
         # Title
@@ -195,51 +260,50 @@ class EngagementDialog(QDialog):
         title.setStyleSheet("color: #ff4ecd;")
         root.addWidget(title)
 
-        subtitle = QLabel("Total periods assigned per teacher this week — sorted by busiest first")
-        subtitle.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        subtitle.setFont(QFont("Arial", 10))
-        subtitle.setStyleSheet("color: #777777;")
-        root.addWidget(subtitle)
+        chart_data, has_backend = build_chart_data()
+
+        # Accuracy notice
+        if has_backend:
+            notice_text  = "📊  Showing actual scheduled periods — includes theory, practicals, and all blocks"
+            notice_color = "#2ecc71"
+        else:
+            notice_text  = "⚠  Timetable not generated yet — showing requested periods only. Generate first for full accuracy."
+            notice_color = "#f0a500"
+
+        notice = QLabel(notice_text)
+        notice.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        notice.setFont(QFont("Arial", 10))
+        notice.setStyleSheet(f"color: {notice_color};")
+        notice.setWordWrap(True)
+        root.addWidget(notice)
 
         # Legend
         legend_row = QHBoxLayout()
         legend_row.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        legend_row.setSpacing(24)
+        legend_row.setSpacing(20)
 
         for color, label in [
-            ("#4a9eff", "Normal"),
-            ("#f0a500", "High (≥ 40)"),
-            ("#e05555", "Overbooked (> 48)"),
+            ("#2ecc71", "Light (< 65%)"),
+            ("#4a9eff", "Moderate (65–84%)"),
+            ("#f0a500", "High (≥ 85%)"),
+            ("#e05555", "Overbooked (> 100%)"),
         ]:
             dot = QLabel("●")
-            dot.setStyleSheet(f"color: {color}; font-size: 14px;")
+            dot.setStyleSheet(f"color: {color}; font-size: 13px;")
             lbl = QLabel(label)
-            lbl.setStyleSheet("color: #aaaaaa; font-size: 11px;")
+            lbl.setStyleSheet("color: #aaaaaa; font-size: 10px;")
             legend_row.addWidget(dot)
             legend_row.addWidget(lbl)
 
-        # Limit line legend
         dash = QLabel("- - -")
-        dash.setStyleSheet("color: #e05555; font-size: 11px; letter-spacing: 2px;")
-        lbl_limit = QLabel(f"Max ({WEEK_MAX} periods)")
-        lbl_limit.setStyleSheet("color: #aaaaaa; font-size: 11px;")
+        dash.setStyleSheet("color: #e05555; font-size: 10px; letter-spacing: 2px;")
+        lbl_limit = QLabel(f"Max ({WEEK_MAX})")
+        lbl_limit.setStyleSheet("color: #aaaaaa; font-size: 10px;")
         legend_row.addWidget(dash)
         legend_row.addWidget(lbl_limit)
-
         root.addLayout(legend_row)
 
-        # Chart (inside scroll area in case there are many teachers)
-        msc_data = load_msc()
-        chart_data = sorted(
-            [
-                (teacher, sum(info.get("classes", {}).values()))
-                for teacher, info in msc_data.items()
-                if info.get("classes")
-            ],
-            key=lambda x: x[1],
-            reverse=True
-        )
-
+        # Chart or empty state
         if chart_data:
             scroll = QScrollArea()
             scroll.setWidgetResizable(True)
@@ -252,14 +316,17 @@ class EngagementDialog(QDialog):
                     background: #3a3a3a; border-radius: 5px; min-width: 30px;
                 }
             """)
-
-            min_chart_w = max(820, len(chart_data) * 70)
-            self.chart  = EngagementChart(chart_data)
-            self.chart.setMinimumWidth(min_chart_w)
+            min_w      = max(820, len(chart_data) * 70)
+            self.chart = EngagementChart(chart_data)
+            self.chart.setMinimumWidth(min_w)
             scroll.setWidget(self.chart)
             root.addWidget(scroll)
         else:
-            empty = QLabel("No teacher schedule data found.\nAssign periods via Manage Teacher's Schedule first.")
+            empty = QLabel(
+                "No teacher data found.\n"
+                "Add teachers and assign schedules first,\n"
+                "then generate the timetable for full accuracy."
+            )
             empty.setAlignment(Qt.AlignmentFlag.AlignCenter)
             empty.setStyleSheet("color: #666666; font-size: 13px;")
             root.addWidget(empty)
@@ -271,10 +338,8 @@ class EngagementDialog(QDialog):
         btn_close.clicked.connect(self.accept)
         btn_close.setStyleSheet("""
             QPushButton {
-                background-color: #2a2a2a;
-                color: #aaaaaa;
-                border: 2px solid #3a3a3a;
-                border-radius: 10px;
+                background-color: #2a2a2a; color: #aaaaaa;
+                border: 2px solid #3a3a3a; border-radius: 10px;
             }
             QPushButton:hover { background-color: #333333; color: white; }
         """)
@@ -309,13 +374,11 @@ class ManageTeacherSchedule(QDialog):
         title.setStyleSheet("color: #ff4ecd;")
         root.addWidget(title)
 
-        # Period counter label (updates live)
         self.period_label = QLabel()
         self.period_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.period_label.setFont(QFont("Arial", 10))
         root.addWidget(self.period_label)
 
-        # Scrollable checkbox area
         scroll = QScrollArea()
         scroll.setWidgetResizable(True)
         scroll.setStyleSheet("""
@@ -330,10 +393,10 @@ class ManageTeacherSchedule(QDialog):
         inner_layout.setSpacing(6)
         inner_layout.setContentsMargins(14, 10, 14, 10)
 
-        self.classes   = load_classes()
-        self.checkboxes = []
-        self.msc_data  = load_msc()
-        teacher_classes = self.msc_data.get(self.teacher_name, {}).get("classes", {})
+        self.classes        = load_classes()
+        self.checkboxes     = []
+        self.msc_data       = load_msc()
+        teacher_classes     = self.msc_data.get(self.teacher_name, {}).get("classes", {})
 
         cb_style = """
             QCheckBox { color: #cccccc; font-size: 12px; padding: 4px; }
@@ -358,7 +421,6 @@ class ManageTeacherSchedule(QDialog):
         self.setLayout(root)
         self._update_period_label()
 
-    # Live period counter
     def _total_periods(self):
         data = load_msc()
         return sum(data.get(self.teacher_name, {}).get("classes", {}).values())
@@ -381,8 +443,7 @@ class ManageTeacherSchedule(QDialog):
         checkbox = self.sender()
         if state == Qt.CheckState.Checked.value:
             periods, ok = QInputDialog.getInt(
-                self,
-                "Enter Periods",
+                self, "Enter Periods",
                 f"Number of {self.subject} periods per week for {checkbox.text()}:",
                 1, 1, WEEK_MAX
             )

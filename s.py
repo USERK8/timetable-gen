@@ -1,130 +1,123 @@
 # s.py
 
 from PyQt6.QtWidgets import (
-    QWidget,
-    QVBoxLayout,
-    QPushButton,
-    QMessageBox
+    QWidget, QVBoxLayout, QHBoxLayout,
+    QPushButton, QLabel, QMessageBox, QFrame
 )
 from PyQt6.QtCore import Qt
 from PyQt6.QtGui import QFont
+
+import theme
+from paths import VERSION_FILE
 
 
 class SettingsPage(QWidget):
     def __init__(self, main_window):
         super().__init__()
         self.main_window = main_window
+        self._init_ui()
 
-        self.buttons = []
-        self.init_ui()
-        self.apply_style()
+    def _init_ui(self):
+        root = QVBoxLayout(self)
+        root.setContentsMargins(48, 40, 48, 40)
+        root.setSpacing(20)
+        root.setAlignment(Qt.AlignmentFlag.AlignTop)
 
-    def init_ui(self):
-        self.layout = QVBoxLayout()
-        self.layout.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        # Header
+        header = QHBoxLayout()
+        self.back_btn = QPushButton("← Back")
+        self.back_btn.setStyleSheet(theme.btn_back())
+        self.back_btn.setFixedWidth(100)
+        self.back_btn.clicked.connect(self.main_window.go_home)
+        header.addWidget(self.back_btn)
+        header.addStretch()
+        root.addLayout(header)
 
-        self.btn_help = QPushButton("Help")
-        self.btn_help.clicked.connect(self.show_help)
+        title = QLabel("Settings")
+        title.setStyleSheet(theme.title_style(28))
+        root.addWidget(title)
 
-        self.btn_about = QPushButton("About Us")
-        self.btn_about.clicked.connect(self.show_about)
+        sub = QLabel("App info, help and version details")
+        sub.setStyleSheet(theme.subtitle_style())
+        root.addWidget(sub)
 
-        self.btn_version = QPushButton("Version")
-        self.btn_version.clicked.connect(self.show_version)
+        # Settings cards
+        cards_data = [
+            ("?", "Help",         "Get support or contact the developer",  self.show_help),
+            ("i", "About",        "About this app and its creator",         self.show_about),
+            ("◎", "Version",      "Check the current installed version",    self.show_version),
+        ]
 
-        self.btn_back = QPushButton("Back")
-        self.btn_back.clicked.connect(self.main_window.go_home)
+        for icon, label, desc, fn in cards_data:
+            root.addWidget(self._setting_row(icon, label, desc, fn))
 
-        self.buttons.extend([
-            self.btn_help,
-            self.btn_about,
-            self.btn_version,
-            self.btn_back
-        ])
+        root.addStretch()
 
-        for btn in self.buttons:
-            self.layout.addWidget(btn)
-
-        self.setLayout(self.layout)
-
-    def apply_style(self):
-        self.setStyleSheet("""
-            QWidget {
-                background-color: #121212;
-            }
+    def _setting_row(self, icon, label, desc, fn):
+        card = QFrame()
+        card.setStyleSheet(f"""
+            QFrame {{
+                background-color: {theme.SURFACE};
+                border: 1px solid {theme.BORDER};
+                border-radius: 14px;
+            }}
+            QFrame:hover {{
+                border-color: {theme.BORDER_GLOW};
+            }}
         """)
+        card.setFixedHeight(76)
 
-    # This runs whenever page becomes visible
-    def showEvent(self, event):
-        self.dynamic_scaling()
-        super().showEvent(event)
+        row = QHBoxLayout(card)
+        row.setContentsMargins(20, 0, 20, 0)
+        row.setSpacing(16)
 
-    # Also update when resized
-    def resizeEvent(self, event):
-        self.dynamic_scaling()
-        super().resizeEvent(event)
+        ic = QLabel(icon)
+        ic.setFixedWidth(32)
+        ic.setStyleSheet(f"color: {theme.ACCENT1}; font-size: 20px; font-weight: bold; background: transparent; border: none;")
+        ic.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        row.addWidget(ic)
 
-    def dynamic_scaling(self):
-        if not self.main_window:
-            return
+        text_col = QVBoxLayout()
+        text_col.setSpacing(2)
+        lbl = QLabel(label)
+        lbl.setStyleSheet(f"color: {theme.TEXT_PRI}; font-size: 14px; font-weight: 600; background: transparent; border: none;")
+        dsc = QLabel(desc)
+        dsc.setStyleSheet(f"color: {theme.TEXT_SEC}; font-size: 11px; background: transparent; border: none;")
+        text_col.addWidget(lbl)
+        text_col.addWidget(dsc)
+        row.addLayout(text_col)
 
-        width = self.main_window.width()
+        row.addStretch()
 
-        font_size = max(16, width // 60)
-        padding = max(14, width // 90)
-        spacing = max(25, width // 50)
+        btn = QPushButton("Open")
+        btn.setFixedWidth(80)
+        btn.setFixedHeight(36)
+        btn.setStyleSheet(theme.btn_ghost(padding_v=6, radius=8, font_size=12))
+        btn.clicked.connect(fn)
+        row.addWidget(btn)
 
-        self.layout.setSpacing(spacing)
-
-        for btn in self.buttons:
-            btn.setFont(QFont("Arial", font_size))
-            btn.setStyleSheet(f"""
-                QPushButton {{
-                    background-color: qlineargradient(
-                        x1:0, y1:0,
-                        x2:1, y2:1,
-                        stop:0 #0f3d2e,
-                        stop:1 #1b2a4a
-                    );
-                    color: white;
-                    border: 2px solid #2f2f2f;
-                    border-radius: 18px;
-                    padding: {padding}px;
-                }}
-
-                QPushButton:hover {{
-                    background-color: qlineargradient(
-                        x1:0, y1:0,
-                        x2:1, y2:1,
-                        stop:0 #145c43,
-                        stop:1 #243b6b
-                    );
-                }}
-            """)
+        return card
 
     def show_help(self):
         QMessageBox.information(
-            self,
-            "Help",
-            "Facing trouble?\n\nContact us:\nPhone: 9409503970\nEmail: polisohankumarreddy@gmail.com"
+            self, "Help",
+            "Facing trouble?\n\nContact us:\nEmail: userk8.dev@gmail.com"
         )
 
     def show_about(self):
         QMessageBox.information(
-            self,
-            "About Us",
-            "Developed by - P. Sohan Kumar Reddy\nClass 11A\nBatch 2025-26"
+            self, "About",
+            "Timetable Gen\n\nDeveloped by P. Sohan Kumar Reddy\nClass 11A  ·  Batch 2025–26"
         )
 
     def show_version(self):
         try:
-            with open("version.txt", "r") as file:
-                version = file.read().strip()
+            with open(VERSION_FILE, "r") as f:
+                version = f.read().strip()
         except FileNotFoundError:
             version = "Version file not found."
+        QMessageBox.information(self, "Version", f"Current Version: {version}")
 
-        QMessageBox.information(
-            self,
-            "Version",
-            f"Current Version: {version}"
-        )
+    def dynamic_scaling(self): pass
+    def showEvent(self, event):
+        super().showEvent(event)
